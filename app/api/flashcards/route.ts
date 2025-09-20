@@ -8,6 +8,8 @@ import { extractTextFromPDF, generateFlashcardsFromText } from "@/lib/gemini";
 import { readFile } from "fs/promises";
 import { join } from "path";
 
+export const runtime = "nodejs";
+
 // Generate flashcards from a document
 export async function POST(request: NextRequest) {
   try {
@@ -21,6 +23,8 @@ export async function POST(request: NextRequest) {
     await connectToDatabase();
 
     const { documentId, count = 10 } = await request.json();
+    const n = Number(count);
+    const safeCount = Number.isFinite(n) ? Math.min(Math.max(Math.floor(n), 3), 30) : 10;
 
     if (!documentId) {
       return NextResponse.json({ error: "Document ID required" }, { status: 400 });
@@ -74,7 +78,7 @@ export async function POST(request: NextRequest) {
     // Generate flashcards with Gemini
     let aiFlashcards;
     try {
-      aiFlashcards = await generateFlashcardsFromText(contentForAI, document.name, count);
+      aiFlashcards = await generateFlashcardsFromText(contentForAI, document.name, safeCount);
     } catch (aiErr) {
       console.error("Gemini flashcard generation error:", aiErr);
       return NextResponse.json({ error: `Failed to generate flashcards with AI: ${(aiErr as Error)?.message || 'unknown error'}` }, { status: 500 });
