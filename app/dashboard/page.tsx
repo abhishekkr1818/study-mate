@@ -64,9 +64,8 @@ interface DashboardStats {
   }
 }
 
-async function fetchJSON<T>(url: string): Promise<T | null> {
+async function fetchJSON<T>(url: string, cookieHeader?: string): Promise<T | null> {
   try {
-    const cookieHeader = cookies().toString()
     const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000'
     const fullUrl = url.startsWith('http') ? url : `${baseUrl}${url}`
     
@@ -111,7 +110,9 @@ function formatTime(minutes: number): string {
 }
 
 export default async function DashboardPage() {
-  const statsData = await fetchJSON<{ success: boolean; stats: DashboardStats }>("/api/dashboard/stats")
+  const cookieStore = await cookies()
+  const cookieHeader = cookieStore.toString()
+  const statsData = await fetchJSON<{ success: boolean; stats: DashboardStats }>("/api/dashboard/stats", cookieHeader)
   
   // Fallback to individual API calls if the stats endpoint fails
   let stats: DashboardStats | null = null
@@ -122,9 +123,9 @@ export default async function DashboardPage() {
     // Fallback: try to get basic data from individual endpoints
     try {
       const [docsData, sumsData, cardsData] = await Promise.all([
-        fetchJSON<{ documents: any[] }>("/api/documents"),
-        fetchJSON<{ summaries: any[] }>("/api/summaries"),
-        fetchJSON<{ flashcards: any[] }>("/api/flashcards"),
+        fetchJSON<{ documents: any[] }>("/api/documents", cookieHeader),
+        fetchJSON<{ summaries: any[] }>("/api/summaries", cookieHeader),
+        fetchJSON<{ flashcards: any[] }>("/api/flashcards", cookieHeader),
       ])
 
       const documents = docsData?.documents || []

@@ -10,9 +10,6 @@ const nextConfig = {
     unoptimized: true,
     domains: ['localhost'],
   },
-  experimental: {
-    serverComponentsExternalPackages: ['pdf-parse', 'pdfjs-dist'],
-  },
   webpack: (config, { isServer }) => {
     // Prevent pdfjs worker from being bundled/resolved in Node server build
     config.resolve = config.resolve || {}
