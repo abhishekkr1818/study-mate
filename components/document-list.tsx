@@ -1,87 +1,102 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { FileText, Search, MoreVertical, Download, Trash2, MessageSquare, Zap } from "lucide-react"
+import { FileText, Search, MoreVertical, Download, Trash2, MessageSquare, Zap, RefreshCw } from "lucide-react"
+import { useSession } from "next-auth/react"
 
 interface Document {
-  id: string
+  _id: string
   name: string
-  size: string
+  originalName: string
+  fileSize: number
   uploadDate: string
-  status: "processed" | "processing" | "error"
-  tags: string[]
-  questionsCount: number
-  flashcardsCount: number
+  status: "uploading" | "processing" | "completed" | "error"
+  tags?: string[]
+  questionsCount?: number
+  flashcardsCount?: number
+  errorMessage?: string
 }
 
-const mockDocuments: Document[] = [
-  {
-    id: "1",
-    name: "Machine Learning Fundamentals.pdf",
-    size: "2.4 MB",
-    uploadDate: "2024-01-15",
-    status: "processed",
-    tags: ["AI", "Computer Science"],
-    questionsCount: 23,
-    flashcardsCount: 45,
-  },
-  {
-    id: "2",
-    name: "Statistics for Data Science.pdf",
-    size: "1.8 MB",
-    uploadDate: "2024-01-14",
-    status: "processed",
-    tags: ["Statistics", "Data Science"],
-    questionsCount: 18,
-    flashcardsCount: 32,
-  },
-  {
-    id: "3",
-    name: "Research Methods in Psychology.pdf",
-    size: "3.1 MB",
-    uploadDate: "2024-01-13",
-    status: "processing",
-    tags: ["Psychology", "Research"],
-    questionsCount: 0,
-    flashcardsCount: 0,
-  },
-  {
-    id: "4",
-    name: "Linear Algebra Textbook.pdf",
-    size: "4.2 MB",
-    uploadDate: "2024-01-12",
-    status: "processed",
-    tags: ["Mathematics", "Linear Algebra"],
-    questionsCount: 31,
-    flashcardsCount: 67,
-  },
-]
-
 export function DocumentList() {
-  const [documents] = useState<Document[]>(mockDocuments)
+  const [documents, setDocuments] = useState<Document[]>([])
   const [searchQuery, setSearchQuery] = useState("")
+  const [loading, setLoading] = useState(true)
+  const { data: session } = useSession()
+
+  const fetchDocuments = async () => {
+    if (!session?.user?.id) return
+    
+    try {
+      setLoading(true)
+      const response = await fetch("/api/documents")
+      const data = await response.json()
+      
+      if (response.ok) {
+        setDocuments(data.documents || [])
+      } else {
+        console.error("Failed to fetch documents:", data.error)
+      }
+    } catch (error) {
+      console.error("Error fetching documents:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const deleteDocument = async (documentId: string) => {
+    try {
+      const response = await fetch(`/api/documents?id=${documentId}`, {
+        method: "DELETE",
+      })
+      
+      if (response.ok) {
+        setDocuments(prev => prev.filter(doc => doc._id !== documentId))
+      } else {
+        const data = await response.json()
+        alert(`Failed to delete document: ${data.error}`)
+      }
+    } catch (error) {
+      console.error("Error deleting document:", error)
+      alert("Failed to delete document")
+    }
+  }
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return "0 Bytes"
+    const k = 1024
+    const sizes = ["Bytes", "KB", "MB", "GB"]
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
+  }
+
+  useEffect(() => {
+    fetchDocuments()
+  }, [session])
 
   const filteredDocuments = documents.filter(
     (doc) =>
       doc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      doc.tags.some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase())),
+      doc.originalName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (doc.tags && doc.tags.some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase()))),
   )
 
   const getStatusColor = (status: Document["status"]) => {
     switch (status) {
-      case "processed":
-        return "bg-accent/20 text-accent-foreground"
+      case "completed":
+        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
       case "processing":
-        return "bg-primary/20 text-primary-foreground"
+        return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+      case "uploading":
+        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
       case "error":
-        return "bg-destructive/20 text-destructive-foreground"
+        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
       default:
-        return "bg-muted text-muted-foreground"
+        return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
     }
   }
 
@@ -98,75 +113,93 @@ export function DocumentList() {
             className="pl-10 bg-background/50"
           />
         </div>
+        <Button variant="outline" size="icon" onClick={fetchDocuments} disabled={loading}>
+          <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+        </Button>
       </div>
 
       {/* Documents Grid */}
-      <div className="grid gap-4">
-        {filteredDocuments.map((document) => (
-          <Card key={document.id} className="border-border/50 bg-card/50 hover:bg-card/80 transition-colors">
-            <CardContent className="p-6">
-              <div className="flex items-start justify-between">
-                <div className="flex items-start gap-4 flex-1">
-                  <FileText className="h-10 w-10 text-primary flex-shrink-0 mt-1" />
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-lg mb-2 truncate">{document.name}</h3>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
-                      <span>{document.size}</span>
-                      <span>•</span>
-                      <span>Uploaded {new Date(document.uploadDate).toLocaleDateString()}</span>
-                    </div>
-                    <div className="flex items-center gap-2 mb-3">
-                      <Badge className={getStatusColor(document.status)}>{document.status}</Badge>
-                      {document.tags.map((tag) => (
-                        <Badge key={tag} variant="outline" className="bg-transparent">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
-                    {document.status === "processed" && (
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <MessageSquare className="h-4 w-4" />
-                          {document.questionsCount} questions
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Zap className="h-4 w-4" />
-                          {document.flashcardsCount} flashcards
-                        </span>
+      {loading ? (
+        <Card className="border-border/50 bg-card/50">
+          <CardContent className="py-12 text-center">
+            <RefreshCw className="h-8 w-8 text-muted-foreground mx-auto mb-4 animate-spin" />
+            <p className="text-muted-foreground">Loading documents...</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-4">
+          {filteredDocuments.map((document) => (
+            <Card key={document._id} className="border-border/50 bg-card/50 hover:bg-card/80 transition-colors">
+              <CardContent className="p-6">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-start gap-4 flex-1">
+                    <FileText className="h-10 w-10 text-primary flex-shrink-0 mt-1" />
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-lg mb-2 truncate">{document.name}</h3>
+                      <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
+                        <span>{formatFileSize(document.fileSize)}</span>
+                        <span>•</span>
+                        <span>Uploaded {new Date(document.uploadDate).toLocaleDateString()}</span>
                       </div>
-                    )}
+                      <div className="flex items-center gap-2 mb-3">
+                        <Badge className={getStatusColor(document.status)}>{document.status}</Badge>
+                        {document.tags && document.tags.map((tag) => (
+                          <Badge key={tag} variant="outline" className="bg-transparent">
+                            {tag}
+                          </Badge>
+                        ))}
+                      </div>
+                      {document.status === "completed" && (
+                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <MessageSquare className="h-4 w-4" />
+                            {document.questionsCount || 0} questions
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Zap className="h-4 w-4" />
+                            {document.flashcardsCount || 0} flashcards
+                          </span>
+                        </div>
+                      )}
+                      {document.status === "error" && document.errorMessage && (
+                        <p className="text-sm text-red-500 mt-2">{document.errorMessage}</p>
+                      )}
+                    </div>
                   </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon">
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem>
+                        <MessageSquare className="mr-2 h-4 w-4" />
+                        Ask Questions
+                      </DropdownMenuItem>
+                      <DropdownMenuItem>
+                        <Zap className="mr-2 h-4 w-4" />
+                        Generate Flashcards
+                      </DropdownMenuItem>
+                      <DropdownMenuItem>
+                        <Download className="mr-2 h-4 w-4" />
+                        Download
+                      </DropdownMenuItem>
+                      <DropdownMenuItem 
+                        className="text-destructive"
+                        onClick={() => deleteDocument(document._id)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon">
-                      <MoreVertical className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem>
-                      <MessageSquare className="mr-2 h-4 w-4" />
-                      Ask Questions
-                    </DropdownMenuItem>
-                    <DropdownMenuItem>
-                      <Zap className="mr-2 h-4 w-4" />
-                      Generate Flashcards
-                    </DropdownMenuItem>
-                    <DropdownMenuItem>
-                      <Download className="mr-2 h-4 w-4" />
-                      Download
-                    </DropdownMenuItem>
-                    <DropdownMenuItem className="text-destructive">
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {filteredDocuments.length === 0 && (
         <Card className="border-border/50 bg-card/50">

@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils"
 import { BookOpen, MessageSquare, Zap, FileText, User, Brain, Settings, LogOut, Home } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { signOut } from "next-auth/react"
 
 const sidebarItems = [
   {
@@ -41,6 +42,13 @@ const sidebarItems = [
 
 export function DashboardSidebar() {
   const pathname = usePathname()
+
+  const handleLogout = async () => {
+    await signOut({ 
+      callbackUrl: '/login',
+      redirect: true 
+    })
+  }
 
   return (
     <div className="flex h-full w-64 flex-col bg-sidebar border-r border-sidebar-border">
@@ -84,6 +92,7 @@ export function DashboardSidebar() {
         </Button>
         <Button
           variant="ghost"
+          onClick={handleLogout}
           className="w-full justify-start gap-3 h-11 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         >
           <LogOut className="h-5 w-5" />

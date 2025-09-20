@@ -12,8 +12,20 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Search, Bell, Settings, LogOut, User } from "lucide-react"
+import { signOut, useSession } from "next-auth/react"
+import { useRouter } from "next/navigation"
 
 export function DashboardHeader() {
+  const { data: session } = useSession()
+  const router = useRouter()
+
+  const handleLogout = async () => {
+    await signOut({ 
+      callbackUrl: '/login',
+      redirect: true 
+    })
+  }
+
   return (
     <header className="flex h-16 items-center justify-between px-6 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       {/* Search */}
@@ -37,16 +49,18 @@ export function DashboardHeader() {
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="relative h-10 w-10 rounded-full">
               <Avatar className="h-10 w-10">
-                <AvatarImage src="/student-avatar.png" alt="User" />
-                <AvatarFallback>AJ</AvatarFallback>
+                <AvatarImage src={session?.user?.image || "/student-avatar.png"} alt="User" />
+                <AvatarFallback>
+                  {session?.user?.name?.charAt(0) || "U"}
+                </AvatarFallback>
               </Avatar>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-56" align="end" forceMount>
             <DropdownMenuLabel className="font-normal">
               <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium leading-none">Alex Johnson</p>
-                <p className="text-xs leading-none text-muted-foreground">alex@university.edu</p>
+                <p className="text-sm font-medium leading-none">{session?.user?.name || "User"}</p>
+                <p className="text-xs leading-none text-muted-foreground">{session?.user?.email}</p>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
@@ -59,7 +73,7 @@ export function DashboardHeader() {
               <span>Settings</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={handleLogout}>
               <LogOut className="mr-2 h-4 w-4" />
               <span>Log out</span>
             </DropdownMenuItem>

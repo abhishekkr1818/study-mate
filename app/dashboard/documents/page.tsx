@@ -1,9 +1,18 @@
+"use client"
+
+import { useState } from "react"
 import { DocumentUpload } from "@/components/document-upload"
 import { DocumentList } from "@/components/document-list"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Upload, FileText } from "lucide-react"
 
 export default function DocumentsPage() {
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
+
+  const handleUploadSuccess = () => {
+    setRefreshTrigger(prev => prev + 1)
+  }
+
   return (
     <div className="p-6 space-y-6">
       <div className="space-y-2">
@@ -26,11 +35,11 @@ export default function DocumentsPage() {
         </TabsList>
 
         <TabsContent value="upload" className="space-y-6">
-          <DocumentUpload />
+          <DocumentUpload onUploadSuccess={handleUploadSuccess} />
         </TabsContent>
 
         <TabsContent value="library" className="space-y-6">
-          <DocumentList />
+          <DocumentList key={refreshTrigger} />
         </TabsContent>
       </Tabs>
     </div>

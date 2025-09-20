@@ -6,8 +6,9 @@ import { useState, useCallback } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { Upload, FileText, X, CheckCircle } from "lucide-react"
+import { Upload, FileText, X, CheckCircle, AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useSession } from "next-auth/react"
 
 interface UploadedFile {
   id: string
@@ -15,11 +16,13 @@ interface UploadedFile {
   size: number
   progress: number
   status: "uploading" | "processing" | "completed" | "error"
+  error?: string
 }
 
-export function DocumentUpload() {
+export function DocumentUpload({ onUploadSuccess }: { onUploadSuccess?: () => void }) {
   const [files, setFiles] = useState<UploadedFile[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
+  const { data: session } = useSession()
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -46,7 +49,12 @@ export function DocumentUpload() {
     }
   }, [])
 
-  const handleFiles = (fileList: File[]) => {
+  const handleFiles = async (fileList: File[]) => {
+    if (!session?.user?.id) {
+      alert("Please log in to upload documents")
+      return
+    }
+
     const newFiles: UploadedFile[] = fileList.map((file) => ({
       id: Math.random().toString(36).substr(2, 9),
       name: file.name,
@@ -57,30 +65,63 @@ export function DocumentUpload() {
 
     setFiles((prev) => [...prev, ...newFiles])
 
-    // Simulate upload progress
-    newFiles.forEach((file) => {
-      simulateUpload(file.id)
-    })
+    // Upload files to server
+    for (const file of fileList) {
+      await uploadFile(file, newFiles.find(f => f.name === file.name)!.id)
+    }
   }
 
-  const simulateUpload = (fileId: string) => {
-    const interval = setInterval(() => {
+  const uploadFile = async (file: File, fileId: string) => {
+    try {
+      // Update progress to show uploading
       setFiles((prev) =>
-        prev.map((file) => {
-          if (file.id === fileId) {
-            if (file.progress < 100) {
-              return { ...file, progress: file.progress + 10 }
-            } else if (file.status === "uploading") {
-              return { ...file, status: "processing" }
-            } else if (file.status === "processing") {
-              clearInterval(interval)
-              return { ...file, status: "completed" }
-            }
-          }
-          return file
-        }),
+        prev.map((f) => (f.id === fileId ? { ...f, progress: 50, status: "uploading" } : f))
       )
-    }, 200)
+
+      const formData = new FormData()
+      formData.append("file", file)
+
+      const response = await fetch("/api/documents", {
+        method: "POST",
+        body: formData,
+      })
+
+      const result = await response.json()
+
+      if (response.ok) {
+        // Upload successful
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.id === fileId
+              ? { ...f, progress: 100, status: "completed" }
+              : f
+          )
+        )
+        
+        // Call success callback to refresh document list
+        if (onUploadSuccess) {
+          onUploadSuccess()
+        }
+      } else {
+        // Upload failed
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.id === fileId
+              ? { ...f, status: "error", error: result.error || "Upload failed" }
+              : f
+          )
+        )
+      }
+    } catch (error) {
+      console.error("Upload error:", error)
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.id === fileId
+            ? { ...f, status: "error", error: "Network error" }
+            : f
+        )
+      )
+    }
   }
 
   const removeFile = (fileId: string) => {
@@ -136,7 +177,8 @@ export function DocumentUpload() {
                     <div className="flex items-center justify-between mb-1">
                       <p className="text-sm font-medium truncate">{file.name}</p>
                       <div className="flex items-center gap-2">
-                        {file.status === "completed" && <CheckCircle className="h-4 w-4 text-accent" />}
+                        {file.status === "completed" && <CheckCircle className="h-4 w-4 text-green-500" />}
+                        {file.status === "error" && <AlertCircle className="h-4 w-4 text-red-500" />}
                         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeFile(file.id)}>
                           <X className="h-3 w-3" />
                         </Button>
@@ -147,7 +189,12 @@ export function DocumentUpload() {
                       <span>•</span>
                       <span className="capitalize">{file.status}</span>
                     </div>
-                    {file.status !== "completed" && <Progress value={file.progress} className="h-1 mt-2" />}
+                    {file.status === "error" && file.error && (
+                      <p className="text-xs text-red-500 mt-1">{file.error}</p>
+                    )}
+                    {file.status !== "completed" && file.status !== "error" && (
+                      <Progress value={file.progress} className="h-1 mt-2" />
+                    )}
                   </div>
                 </div>
               ))}
