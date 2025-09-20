@@ -1,7 +1,12 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // Initialize Gemini AI
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+const apiKey = process.env.GEMINI_API_KEY;
+if (!apiKey) {
+  // Defer throwing to runtime functions so API routes can return a helpful error
+  console.warn("GEMINI_API_KEY is not set. Summaries will fail until configured.");
+}
+const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null as any;
 
 export interface SummaryOptions {
   length: "brief" | "detailed" | "comprehensive";
@@ -21,6 +26,9 @@ export async function generateSummaryFromPDF(
   options: SummaryOptions = { length: "detailed" }
 ): Promise<GeminiSummaryResponse> {
   try {
+    if (!apiKey || !genAI) {
+      throw new Error("Missing GEMINI_API_KEY. Please set it in .env.local and restart the server.");
+    }
     console.log("Initializing Gemini model...");
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     console.log("Gemini model initialized successfully");
@@ -70,9 +78,18 @@ Format your response as JSON:
     console.log("Received response from Gemini API, length:", text.length);
 
     // Parse JSON response
-    let summaryData;
+    let summaryData: any;
     try {
-      summaryData = JSON.parse(text);
+      // Some responses may include markdown code fences. Try to extract JSON safely.
+      const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+      const jsonCandidate = fencedMatch ? fencedMatch[1] : text;
+      // Find first JSON object if extra text surrounds it
+      const firstBrace = jsonCandidate.indexOf("{");
+      const lastBrace = jsonCandidate.lastIndexOf("}");
+      const toParse = (firstBrace !== -1 && lastBrace !== -1)
+        ? jsonCandidate.substring(firstBrace, lastBrace + 1)
+        : jsonCandidate;
+      summaryData = JSON.parse(toParse);
       console.log("Successfully parsed JSON response");
     } catch (parseError) {
       console.error("Error parsing JSON response:", parseError);
@@ -89,7 +106,7 @@ Format your response as JSON:
 
   } catch (error) {
     console.error("Error generating summary with Gemini:", error);
-    throw new Error("Failed to generate summary");
+    throw new Error((error as Error)?.message || "Failed to generate summary");
   }
 }
 
@@ -98,6 +115,9 @@ export async function generateCrossDocumentSummary(
   options: SummaryOptions = { length: "detailed" }
 ): Promise<GeminiSummaryResponse> {
   try {
+    if (!apiKey || !genAI) {
+      throw new Error("Missing GEMINI_API_KEY. Please set it in .env.local and restart the server.");
+    }
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     const documentsText = documents.map((doc, index) => 
@@ -140,7 +160,21 @@ Format your response as JSON:
     const text = response.text();
 
     // Parse JSON response
-    const summaryData = JSON.parse(text);
+    let summaryData: any;
+    try {
+      const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+      const jsonCandidate = fencedMatch ? fencedMatch[1] : text;
+      const firstBrace = jsonCandidate.indexOf("{");
+      const lastBrace = jsonCandidate.lastIndexOf("}");
+      const toParse = (firstBrace !== -1 && lastBrace !== -1)
+        ? jsonCandidate.substring(firstBrace, lastBrace + 1)
+        : jsonCandidate;
+      summaryData = JSON.parse(toParse);
+    } catch (e) {
+      console.error("Error parsing JSON response for cross-doc:", e);
+      console.error("Raw response:", text);
+      throw new Error("Failed to parse AI response");
+    }
     
     return {
       title: summaryData.title,
@@ -151,7 +185,7 @@ Format your response as JSON:
 
   } catch (error) {
     console.error("Error generating cross-document summary with Gemini:", error);
-    throw new Error("Failed to generate cross-document summary");
+    throw new Error((error as Error)?.message || "Failed to generate cross-document summary");
   }
 }
 

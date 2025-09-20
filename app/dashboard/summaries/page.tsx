@@ -44,11 +44,18 @@ export default function SummariesPage() {
     if (!session?.user?.id) return
     
     try {
-      const response = await fetch("/api/documents")
-      const data = await response.json()
+      const response = await fetch("/api/documents", { headers: { Accept: "application/json" } })
+      let data: any = null
+      const contentType = response.headers.get("content-type") || ""
+      if (contentType.includes("application/json")) {
+        try { data = await response.json() } catch { data = null }
+      } else {
+        const text = await response.text()
+        console.error("Non-JSON response while fetching documents:", text)
+      }
       
       if (response.ok) {
-        setDocuments(data.documents || [])
+        setDocuments((data?.documents) || [])
       }
     } catch (error) {
       console.error("Error fetching documents:", error)
@@ -60,11 +67,18 @@ export default function SummariesPage() {
     
     try {
       setLoading(true)
-      const response = await fetch("/api/summaries")
-      const data = await response.json()
+      const response = await fetch("/api/summaries", { headers: { Accept: "application/json" } })
+      let data: any = null
+      const contentType = response.headers.get("content-type") || ""
+      if (contentType.includes("application/json")) {
+        try { data = await response.json() } catch { data = null }
+      } else {
+        const text = await response.text()
+        console.error("Non-JSON response while fetching summaries:", text)
+      }
       
       if (response.ok) {
-        setSummaries(data.summaries || [])
+        setSummaries((data?.summaries) || [])
       }
     } catch (error) {
       console.error("Error fetching summaries:", error)
@@ -80,6 +94,7 @@ export default function SummariesPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Accept": "application/json",
         },
         body: JSON.stringify({
           documentId,
@@ -87,14 +102,20 @@ export default function SummariesPage() {
           type: "document"
         }),
       })
-
-      const data = await response.json()
+      let data: any = null
+      const contentType = response.headers.get("content-type") || ""
+      if (contentType.includes("application/json")) {
+        try { data = await response.json() } catch { data = null }
+      } else {
+        const text = await response.text()
+        console.error("Non-JSON response after generateSummary:", text)
+      }
       
       if (response.ok) {
         await fetchSummaries()
         alert(`Summary generated successfully!`)
       } else {
-        alert(`Failed to generate summary: ${data.error}`)
+        alert(`Failed to generate summary: ${data?.error || response.statusText}`)
       }
     } catch (error) {
       console.error("Error generating summary:", error)
@@ -116,6 +137,7 @@ export default function SummariesPage() {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
+          "Accept": "application/json",
         },
         body: JSON.stringify({
           documentIds: selectedDocuments,
@@ -123,15 +145,21 @@ export default function SummariesPage() {
           type: "cross-document"
         }),
       })
-
-      const data = await response.json()
+      let data: any = null
+      const contentType = response.headers.get("content-type") || ""
+      if (contentType.includes("application/json")) {
+        try { data = await response.json() } catch { data = null }
+      } else {
+        const text = await response.text()
+        console.error("Non-JSON response after generateCrossDocumentSummary:", text)
+      }
       
       if (response.ok) {
         await fetchSummaries()
         setSelectedDocuments([])
         alert(`Cross-document summary generated successfully!`)
       } else {
-        alert(`Failed to generate cross-document summary: ${data.error}`)
+        alert(`Failed to generate cross-document summary: ${data?.error || response.statusText}`)
       }
     } catch (error) {
       console.error("Error generating cross-document summary:", error)
@@ -145,13 +173,18 @@ export default function SummariesPage() {
     try {
       const response = await fetch(`/api/summaries?id=${summaryId}`, {
         method: "DELETE",
+        headers: { Accept: "application/json" },
       })
       
       if (response.ok) {
         await fetchSummaries()
       } else {
-        const data = await response.json()
-        alert(`Failed to delete summary: ${data.error}`)
+        let data: any = null
+        const contentType = response.headers.get("content-type") || ""
+        if (contentType.includes("application/json")) {
+          try { data = await response.json() } catch { /* ignore */ }
+        }
+        alert(`Failed to delete summary: ${data?.error || response.statusText}`)
       }
     } catch (error) {
       console.error("Error deleting summary:", error)

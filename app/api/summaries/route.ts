@@ -53,42 +53,41 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Read PDF file
-    const pdfPath = join(process.cwd(), "public", document.filePath);
-    console.log("PDF Path:", pdfPath);
-    
-    let pdfBuffer;
-    try {
-      pdfBuffer = await readFile(pdfPath);
-      console.log("PDF file read successfully, size:", pdfBuffer.length);
-    } catch (fileError) {
-      console.error("Error reading PDF file:", fileError);
-      return NextResponse.json({ error: "Failed to read PDF file" }, { status: 500 });
-    }
-    
-    // Extract text from PDF using pdf-parse
-    let pdfContent;
-    try {
-      pdfContent = await extractTextFromPDF(pdfBuffer);
-      console.log("PDF text extracted successfully, length:", pdfContent.length);
-    } catch (extractError) {
-      console.error("Error extracting PDF text:", extractError);
-      return NextResponse.json({ error: "Failed to extract text from PDF" }, { status: 500 });
+    // Prefer pre-extracted text stored on the document; fallback to reading and extracting
+    let pdfContent: string | undefined = document.extractedText;
+    if (!pdfContent || pdfContent.trim().length === 0) {
+      // Read PDF file from disk and extract text as a fallback
+      const pdfPath = join(process.cwd(), "public", document.filePath);
+      console.log("No stored extractedText; reading PDF from:", pdfPath);
+
+      try {
+        const pdfBuffer = await readFile(pdfPath);
+        pdfContent = await extractTextFromPDF(pdfBuffer as unknown as Buffer);
+        console.log("Fallback extraction succeeded; length:", pdfContent.length);
+      } catch (fallbackErr) {
+        console.error("Fallback extraction failed:", fallbackErr);
+        return NextResponse.json({ error: `Failed to extract text from PDF: ${(fallbackErr as Error)?.message || 'unknown error'}` }, { status: 500 });
+      }
     }
 
     // Generate summary using Gemini
     let summaryData;
     try {
       console.log("Calling Gemini API for summary generation...");
+      // Truncate to reduce token pressure on the model
+      const MAX_SINGLE_LEN = 50000;
+      const contentForAI = pdfContent.length > MAX_SINGLE_LEN
+        ? pdfContent.substring(0, MAX_SINGLE_LEN) + "... [Content truncated]"
+        : pdfContent;
       summaryData = await generateSummaryFromPDF(
-        pdfContent,
+        contentForAI,
         document.name,
         { length, focus }
       );
       console.log("Gemini API call successful");
     } catch (geminiError) {
       console.error("Error calling Gemini API:", geminiError);
-      return NextResponse.json({ error: "Failed to generate summary with AI" }, { status: 500 });
+      return NextResponse.json({ error: `Failed to generate summary with AI: ${(geminiError as Error)?.message || 'unknown error'}` }, { status: 500 });
     }
 
     // Save summary to database
@@ -159,24 +158,43 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Some documents not found" }, { status: 404 });
     }
 
-    // Extract content from all documents
-    const documentsWithContent = [];
+    // Extract content from all documents, prefer stored extractedText
+    const documentsWithContent = [] as Array<{ name: string; content: string }>;
     for (const doc of documents) {
-      const pdfPath = join(process.cwd(), "public", doc.filePath);
-      const pdfBuffer = await readFile(pdfPath);
-      const pdfContent = await extractTextFromPDF(pdfBuffer);
-      
+      let content = doc.extractedText as string | undefined;
+      if (!content || content.trim().length === 0) {
+        const pdfPath = join(process.cwd(), "public", doc.filePath);
+        try {
+          const pdfBuffer = await readFile(pdfPath);
+          content = await extractTextFromPDF(pdfBuffer as unknown as Buffer);
+        } catch (err) {
+          console.error("Failed to extract content for cross-document summary:", err);
+          content = "";
+        }
+      }
+      // Truncate per-document content for cross-doc summaries
+      const MAX_CROSS_LEN = 20000;
+      const contentForAI = (content || "");
+      const trimmed = contentForAI.length > MAX_CROSS_LEN
+        ? contentForAI.substring(0, MAX_CROSS_LEN) + "... [Content truncated]"
+        : contentForAI;
       documentsWithContent.push({
         name: doc.name,
-        content: pdfContent
+        content: trimmed,
       });
     }
 
     // Generate cross-document summary using Gemini
-    const summaryData = await generateCrossDocumentSummary(
-      documentsWithContent,
-      { length, focus }
-    );
+    let summaryData;
+    try {
+      summaryData = await generateCrossDocumentSummary(
+        documentsWithContent,
+        { length, focus }
+      );
+    } catch (geminiErr) {
+      console.error("Error calling Gemini API (cross-doc):", geminiErr);
+      return NextResponse.json({ error: `Failed to generate cross-document summary with AI: ${(geminiErr as Error)?.message || 'unknown error'}` }, { status: 500 });
+    }
 
     // Save summary to database
     const summary = new Summary({
