@@ -1,3 +1,5 @@
+"use client"
+
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -6,8 +8,48 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator"
 import { Brain, Github, Mail } from "lucide-react"
 import Link from "next/link"
+import { useState, FormEvent } from "react"
+import { signIn } from "next-auth/react"
+import { useRouter } from "next/navigation"
 
 export default function SignupPage() {
+  const router = useRouter()
+  const [name, setName] = useState("")
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [role, setRole] = useState<string | undefined>(undefined)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password, role }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to register")
+      }
+      // Auto sign in after registration
+      const signInRes = await signIn("credentials", { redirect: false, email, password })
+      if (signInRes?.error) {
+        setError("Account created, but sign-in failed. Please try logging in.")
+        setLoading(false)
+        return
+      }
+      router.push("/dashboard")
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -29,11 +71,21 @@ export default function SignupPage() {
           <CardContent className="space-y-4">
             {/* Social Signup */}
             <div className="grid grid-cols-2 gap-4">
-              <Button variant="outline" className="w-full bg-transparent">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full bg-transparent"
+                onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
+              >
                 <Mail className="mr-2 h-4 w-4" />
                 Google
               </Button>
-              <Button variant="outline" className="w-full bg-transparent">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full bg-transparent"
+                onClick={() => signIn("github", { callbackUrl: "/dashboard" })}
+              >
                 <Github className="mr-2 h-4 w-4" />
                 GitHub
               </Button>
@@ -49,14 +101,35 @@ export default function SignupPage() {
             </div>
 
             {/* Signup Form */}
-            <form className="space-y-4">
+            {error && (
+              <p className="text-sm text-red-500" role="alert">
+                {error}
+              </p>
+            )}
+            <form className="space-y-4" onSubmit={onSubmit}>
               <div className="space-y-2">
                 <Label htmlFor="name">Full Name</Label>
-                <Input id="name" type="text" placeholder="Alex Johnson" className="bg-background/50" />
+                <Input
+                  id="name"
+                  type="text"
+                  placeholder="Alex Johnson"
+                  className="bg-background/50"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" placeholder="alex@university.edu" className="bg-background/50" />
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="alex@university.edu"
+                  className="bg-background/50"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
@@ -65,11 +138,14 @@ export default function SignupPage() {
                   type="password"
                   placeholder="Create a strong password"
                   className="bg-background/50"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="role">Role (Optional)</Label>
-                <Select>
+                <Select onValueChange={(v) => setRole(v)}>
                   <SelectTrigger className="bg-background/50">
                     <SelectValue placeholder="Select your role" />
                   </SelectTrigger>
@@ -81,8 +157,8 @@ export default function SignupPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <Button type="submit" className="w-full">
-                Create Account
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? "Creating..." : "Create Account"}
               </Button>
             </form>
 
