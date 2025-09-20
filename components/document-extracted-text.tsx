@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Textarea } from "@/components/ui/textarea"
 import { FileText, Search, RefreshCw } from "lucide-react"
 
 interface DocumentItem {
@@ -25,6 +26,9 @@ export function DocumentExtractedText() {
   const [search, setSearch] = useState("")
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState(false)
+  const [editedText, setEditedText] = useState("")
+  const [saving, setSaving] = useState(false)
 
   const fetchDocs = async () => {
     if (!session?.user?.id) return
@@ -128,20 +132,68 @@ export function DocumentExtractedText() {
                 <h3 className="text-xl font-semibold">{selectedDoc.name}</h3>
                 <p className="text-sm text-muted-foreground">{new Date(selectedDoc.uploadDate).toLocaleString()}</p>
               </div>
-              {selectedDoc.status === "completed" ? (
-                selectedDoc.extractedText && selectedDoc.extractedText.trim().length > 0 ? (
-                  <pre className="whitespace-pre-wrap text-sm leading-6 text-foreground/90 max-h-[65vh] overflow-auto bg-background/50 p-3 rounded-md">
-                    {selectedDoc.extractedText}
-                  </pre>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No text extracted for this PDF.</p>
-                )
-              ) : selectedDoc.status === "processing" ? (
+              {selectedDoc.status === "processing" ? (
                 <p className="text-sm text-muted-foreground">Processing… Please refresh in a moment.</p>
               ) : selectedDoc.status === "error" ? (
                 <p className="text-sm text-red-500">{selectedDoc.errorMessage || "Failed to process this document."}</p>
               ) : (
-                <p className="text-sm text-muted-foreground">This document is not processed yet.</p>
+                <div className="space-y-3">
+                  {editing ? (
+                    <>
+                      <Textarea
+                        className="min-h-[300px] leading-6"
+                        value={editedText}
+                        onChange={(e) => setEditedText(e.target.value)}
+                        placeholder="Edit extracted text..."
+                      />
+                      <div className="flex gap-2">
+                        <Button size="sm" disabled={saving} onClick={async () => {
+                          try {
+                            setSaving(true)
+                            const res = await fetch('/api/documents', {
+                              method: 'PUT',
+                              headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                              body: JSON.stringify({ id: selectedDoc._id, extractedText: editedText }),
+                            })
+                            const data = await res.json().catch(() => ({}))
+                            if (!res.ok) throw new Error(data?.error || 'Failed to save changes')
+                            // Update local state
+                            setDocuments(prev => prev.map(d => d._id === selectedDoc._id ? { ...d, extractedText: editedText } : d))
+                            setEditing(false)
+                            alert('Extracted text updated')
+                          } catch (e: any) {
+                            alert(e?.message || 'Failed to update')
+                          } finally {
+                            setSaving(false)
+                          }
+                        }}>
+                          {saving ? 'Saving...' : 'Save'}
+                        </Button>
+                        <Button size="sm" variant="outline" className="bg-transparent" onClick={() => {
+                          setEditing(false)
+                          setEditedText(selectedDoc.extractedText || '')
+                        }}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {selectedDoc.extractedText && selectedDoc.extractedText.trim().length > 0 ? (
+                        <pre className="whitespace-pre-wrap text-sm leading-6 text-foreground/90 max-h-[65vh] overflow-auto bg-background/50 p-3 rounded-md">
+                          {selectedDoc.extractedText}
+                        </pre>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">No text extracted for this PDF.</p>
+                      )}
+                      <div className="pt-2">
+                        <Button size="sm" onClick={() => { setEditing(true); setEditedText(selectedDoc.extractedText || '') }} disabled={selectedDoc.status !== 'completed'}>
+                          Edit Extracted Text
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </div>
               )}
             </CardContent>
           </Card>

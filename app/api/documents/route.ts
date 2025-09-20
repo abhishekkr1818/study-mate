@@ -18,7 +18,6 @@ export async function POST(request: NextRequest) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
     // Connect to database
     await connectToDatabase();
 
@@ -50,6 +49,9 @@ export async function POST(request: NextRequest) {
     
     let filePath: string;
     let fileUrl: string | undefined;
+    // Read bytes once for later parsing and potential local write
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
     
     // Choose storage method based on environment
     if (process.env.NODE_ENV === "production" && process.env.CLOUDINARY_CLOUD_NAME) {
@@ -66,8 +68,6 @@ export async function POST(request: NextRequest) {
           await mkdir(uploadsDir, { recursive: true });
         }
         filePath = join(uploadsDir, fileName);
-        const bytes = await file.arrayBuffer();
-        const buffer = Buffer.from(bytes);
         await writeFile(filePath, buffer);
         filePath = `/uploads/documents/${fileName}`;
       }
@@ -78,8 +78,6 @@ export async function POST(request: NextRequest) {
         await mkdir(uploadsDir, { recursive: true });
       }
       filePath = join(uploadsDir, fileName);
-      const bytes = await file.arrayBuffer();
-      const buffer = Buffer.from(bytes);
       await writeFile(filePath, buffer);
       filePath = `/uploads/documents/${fileName}`;
     }
