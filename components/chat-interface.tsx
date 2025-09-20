@@ -11,6 +11,8 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Send, Bot, User, FileText, Copy, ThumbsUp, ThumbsDown } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useSession } from "next-auth/react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface Message {
   id: string
@@ -40,12 +42,32 @@ export function ChatInterface() {
   const [isLoading, setIsLoading] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const { data: session } = useSession()
+  const [documents, setDocuments] = useState<{ _id: string; name: string }[]>([])
+  const [selectedDocId, setSelectedDocId] = useState<string>("all")
 
   useEffect(() => {
     if (scrollAreaRef.current) {
       scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight
     }
   }, [messages])
+
+  useEffect(() => {
+    const fetchDocs = async () => {
+      try {
+        const resp = await fetch("/api/documents", { headers: { Accept: "application/json" } })
+        const ct = resp.headers.get("content-type") || ""
+        let data: any = null
+        if (ct.includes("application/json")) {
+          try { data = await resp.json() } catch { data = null }
+        }
+        if (resp.ok) setDocuments((data?.documents || []).map((d: any) => ({ _id: d._id, name: d.name })))
+      } catch (e) {
+        console.error("Failed to load documents for chat:", e)
+      }
+    }
+    if (session?.user?.id) fetchDocs()
+  }, [session])
 
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading) return
@@ -68,7 +90,10 @@ export function ChatInterface() {
           "Content-Type": "application/json",
           "Accept": "application/json",
         },
-        body: JSON.stringify({ message: userMessage.content }),
+        body: JSON.stringify({ 
+          message: userMessage.content,
+          documentIds: selectedDocId === "all" ? [] : [selectedDocId],
+        }),
       })
 
       let data: any = null
@@ -121,6 +146,24 @@ export function ChatInterface() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Context Selector */}
+      <div className="border-b border-border/50 p-3 bg-background/95">
+        <div className="max-w-4xl mx-auto flex items-center gap-3 text-sm">
+          <span className="text-muted-foreground">Context:</span>
+          <Select value={selectedDocId} onValueChange={setSelectedDocId}>
+            <SelectTrigger className="w-64">
+              <SelectValue placeholder="All documents" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All documents</SelectItem>
+              {documents.map((d) => (
+                <SelectItem key={d._id} value={d._id}>{d.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
       {/* Chat Messages */}
       <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
         <div className="space-y-6 max-w-4xl mx-auto">
