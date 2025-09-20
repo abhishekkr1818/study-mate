@@ -153,7 +153,9 @@ export function FlashcardDeck({ title, description, cards, totalCards }: Flashca
     setSessionComplete(false)
     setSelectedOption(null)
     setFeedbackShown(false)
-    setOptionsMap({})
+    // Pre-generate options for the first question to avoid a blank state on initial render
+    const firstOpts = buildOptionsForIndex(0)
+    setOptionsMap({ 0: firstOpts })
     setStudyStats({ 
       correct: 0, 
       incorrect: 0, 
@@ -184,6 +186,16 @@ export function FlashcardDeck({ title, description, cards, totalCards }: Flashca
   }
 
   const accuracy = studyStats.total > 0 ? Math.round((studyStats.correct / studyStats.total) * 100) : 0
+
+  const switchMode = (mode: 'flashcards' | 'quiz') => {
+    if (gameMode === mode) return
+    setGameMode(mode)
+    // stop any ongoing session and reset per-question state
+    setIsStudying(false)
+    setSessionComplete(false)
+    setSelectedOption(null)
+    setFeedbackShown(false)
+  }
 
   // ----- QUIZ HELPERS -----
   const buildOptionsForIndex = (cardIndex: number) => {
@@ -256,6 +268,10 @@ export function FlashcardDeck({ title, description, cards, totalCards }: Flashca
                   <Zap className="h-3 w-3" />
                   <span>Ready to study</span>
                 </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <Button size="sm" variant={gameMode === 'flashcards' ? 'default' : 'outline'} onClick={() => switchMode('flashcards')}>Flashcards</Button>
+                  <Button size="sm" variant={gameMode === 'quiz' ? 'default' : 'outline'} onClick={() => switchMode('quiz')}>Quiz</Button>
+                </div>
               </div>
             </div>
           </CardHeader>
@@ -324,29 +340,31 @@ export function FlashcardDeck({ title, description, cards, totalCards }: Flashca
 
             {/* Action Buttons */}
             <div className="flex gap-3 pt-4">
-              <Button 
-                onClick={startStudySession} 
-                className="flex-1 gap-2 h-12 text-lg font-medium"
-                disabled={filteredCards.length === 0}
-              >
-                <Play className="h-5 w-5" />
-                Start Study Session
-                {filteredCards.length > 0 && (
-                  <Badge variant="secondary" className="ml-2">
-                    {filteredCards.length}
-                  </Badge>
-                )}
-              </Button>
-              <Button 
-                onClick={startQuizSession} 
-                variant="outline"
-                className="gap-2 h-12 text-lg font-medium bg-transparent"
-                disabled={filteredCards.length < 2}
-                title={filteredCards.length < 2 ? 'Need at least 2 cards for quiz options' : 'Start Quiz'}
-              >
-                <ListChecks className="h-5 w-5" />
-                Start Quiz
-              </Button>
+              {gameMode === 'flashcards' ? (
+                <Button 
+                  onClick={startStudySession} 
+                  className="flex-1 gap-2 h-12 text-lg font-medium"
+                  disabled={filteredCards.length === 0}
+                >
+                  <Play className="h-5 w-5" />
+                  Start Study Session
+                  {filteredCards.length > 0 && (
+                    <Badge variant="secondary" className="ml-2">
+                      {filteredCards.length}
+                    </Badge>
+                  )}
+                </Button>
+              ) : (
+                <Button 
+                  onClick={startQuizSession} 
+                  className="flex-1 gap-2 h-12 text-lg font-medium"
+                  disabled={filteredCards.length < 2}
+                  title={filteredCards.length < 2 ? 'Need at least 2 cards for quiz options' : 'Start Quiz'}
+                >
+                  <ListChecks className="h-5 w-5" />
+                  Start Quiz
+                </Button>
+              )}
               <Button variant="outline" className="gap-2 bg-transparent">
                 <Settings className="h-4 w-4" />
                 Settings
@@ -464,6 +482,10 @@ export function FlashcardDeck({ title, description, cards, totalCards }: Flashca
                   <span className="text-sm text-muted-foreground">{Math.round(progress)}%</span>
                 </div>
                 <Progress value={progress} className="h-3" />
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant={gameMode === 'flashcards' ? 'default' : 'outline'} onClick={() => switchMode('flashcards')}>Flashcards</Button>
+                <Button size="sm" variant={gameMode === 'quiz' ? 'default' : 'outline'} onClick={() => switchMode('quiz')}>Quiz</Button>
               </div>
             </div>
             <div className="flex items-center gap-4">
