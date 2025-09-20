@@ -74,43 +74,12 @@ export async function POST(request: NextRequest) {
     await document.save();
 
     try {
-      // Dynamically import pdfjs-dist at runtime (works in Node)
-      const pdfjs = await import("pdfjs-dist");
-      // Disable worker in Node to avoid trying to load pdf.worker.mjs
-      try {
-        const anyPdf: any = pdfjs as any;
-        if (anyPdf.GlobalWorkerOptions) {
-          anyPdf.GlobalWorkerOptions.workerSrc = undefined;
-        }
-      } catch {}
+      // Use pdf-parse via dynamic import and Next.js server externals to avoid bundling pitfalls
+      const { default: pdfParse } = await import("pdf-parse");
+      const parsed = await pdfParse(buffer as any);
+      const extractedText = (parsed?.text || "").trim();
 
-      const { getDocument } = pdfjs as unknown as {
-        getDocument: (src: any) => { promise: Promise<any> }
-      };
-
-      // Ensure we pass a Uint8Array to pdf.js
-      const uint8 = new Uint8Array(buffer);
-
-      const loadingTask = getDocument({
-        data: uint8,
-        useSystemFonts: true,
-        isEvalSupported: false,
-        disableWorker: true,
-      });
-      const pdf = await loadingTask.promise;
-
-      let extractedText = "";
-      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-        const page = await pdf.getPage(pageNum);
-        const content = await page.getTextContent();
-        const strings: string[] = [];
-        for (const item of content.items as any[]) {
-          if (item && typeof item.str === "string") strings.push(item.str);
-        }
-        extractedText += strings.join(" ") + "\n\n";
-      }
-
-      document.extractedText = extractedText.trim();
+      document.extractedText = extractedText;
       document.status = "completed";
       document.processedDate = new Date();
       await document.save();
