@@ -26,45 +26,16 @@ interface Citation {
   snippet: string
 }
 
-const mockMessages: Message[] = [
-  {
-    id: "1",
-    type: "assistant",
-    content:
-      "Hello! I'm your AI study assistant. I can help you understand your documents, answer questions, and generate study materials. What would you like to learn about today?",
-    timestamp: new Date(Date.now() - 1000 * 60 * 30),
-  },
-  {
-    id: "2",
-    type: "user",
-    content: "What are the main types of machine learning algorithms?",
-    timestamp: new Date(Date.now() - 1000 * 60 * 25),
-  },
-  {
-    id: "3",
-    type: "assistant",
-    content:
-      "Based on your uploaded documents, there are three main types of machine learning algorithms:\n\n1. **Supervised Learning**: Uses labeled training data to learn a mapping from inputs to outputs. Examples include linear regression, decision trees, and neural networks.\n\n2. **Unsupervised Learning**: Finds patterns in data without labeled examples. Common techniques include clustering (k-means), dimensionality reduction (PCA), and association rules.\n\n3. **Reinforcement Learning**: Learns through interaction with an environment, receiving rewards or penalties for actions. Used in game playing, robotics, and autonomous systems.\n\nEach type has different use cases and is suited for different kinds of problems.",
-    timestamp: new Date(Date.now() - 1000 * 60 * 24),
-    citations: [
-      {
-        documentName: "Machine Learning Fundamentals.pdf",
-        pageNumber: 23,
-        snippet:
-          "Supervised learning algorithms learn from labeled training data to make predictions on new, unseen data...",
-      },
-      {
-        documentName: "Machine Learning Fundamentals.pdf",
-        pageNumber: 45,
-        snippet:
-          "Unsupervised learning techniques discover hidden patterns in data without the need for labeled examples...",
-      },
-    ],
-  },
-]
+const initialMessage: Message = {
+  id: "welcome",
+  type: "assistant",
+  content:
+    "Hello! I'm your AI study assistant. Ask questions about your uploaded documents, and I'll answer with helpful detail and sources when available.",
+  timestamp: new Date(),
+}
 
 export function ChatInterface() {
-  const [messages, setMessages] = useState<Message[]>(mockMessages)
+  const [messages, setMessages] = useState<Message[]>([initialMessage])
   const [inputValue, setInputValue] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
@@ -90,25 +61,55 @@ export function ChatInterface() {
     setInputValue("")
     setIsLoading(true)
 
-    // Simulate AI response
-    setTimeout(() => {
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+        body: JSON.stringify({ message: userMessage.content }),
+      })
+
+      let data: any = null
+      const contentType = response.headers.get("content-type") || ""
+      if (contentType.includes("application/json")) {
+        try { data = await response.json() } catch { data = null }
+      } else {
+        const text = await response.text()
+        console.error("Non-JSON response from /api/chat:", text)
+      }
+
+      if (response.ok) {
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          type: "assistant",
+          content: data?.answer || "",
+          timestamp: new Date(),
+          citations: Array.isArray(data?.citations) ? data.citations : undefined,
+        }
+        setMessages((prev) => [...prev, assistantMessage])
+      } else {
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          type: "assistant",
+          content: `Sorry, I couldn't answer that. ${data?.error || response.statusText}`,
+          timestamp: new Date(),
+        }
+        setMessages((prev) => [...prev, assistantMessage])
+      }
+    } catch (err) {
+      console.error("Chat request failed:", err)
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: "assistant",
-        content:
-          "I'm processing your question and searching through your documents to provide the most accurate answer. This is a simulated response for the demo.",
+        content: "Sorry, something went wrong. Please try again.",
         timestamp: new Date(),
-        citations: [
-          {
-            documentName: "Statistics for Data Science.pdf",
-            pageNumber: 12,
-            snippet: "This is a sample citation snippet that would be extracted from your document...",
-          },
-        ],
       }
       setMessages((prev) => [...prev, assistantMessage])
+    } finally {
       setIsLoading(false)
-    }, 2000)
+    }
   }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
