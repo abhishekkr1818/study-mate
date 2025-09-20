@@ -52,3 +52,4 @@ DocumentSchema.index({ userId: 1, status: 1 });
 
 const Document = models.Document || model<IDocument>("Document", DocumentSchema);
 export default Document;
+

@@ -51,3 +51,4 @@ FlashcardSchema.index({ userId: 1, nextReview: 1 });
 
 const Flashcard = models.Flashcard || model<IFlashcard>("Flashcard", FlashcardSchema);
 export default Flashcard;
+

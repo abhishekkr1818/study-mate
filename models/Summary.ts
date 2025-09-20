@@ -50,3 +50,4 @@ SummarySchema.index({ userId: 1, generatedAt: -1 });
 
 const Summary = models.Summary || model<ISummary>("Summary", SummarySchema);
 export default Summary;
+

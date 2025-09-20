@@ -2,6 +2,8 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // Initialize Gemini AI
 const apiKey = process.env.GEMINI_API_KEY;
+const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
+
 if (!apiKey) {
   // Defer throwing to runtime functions so API routes can return a helpful error
   console.warn("GEMINI_API_KEY is not set. Summaries will fail until configured.");
@@ -72,7 +74,6 @@ ${content}
     throw new Error((error as Error)?.message || "Failed to generate flashcards");
   }
 }
-const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null as any;
 
 export interface SummaryOptions {
   length: "brief" | "detailed" | "comprehensive";

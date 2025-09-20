@@ -59,10 +59,19 @@ export async function POST(request: NextRequest) {
     // Get content: prefer stored extracted text; fallback to reading the PDF and extracting
     let content: string | undefined = (document as any).extractedText;
     if (!content || content.trim().length === 0) {
+      if (!document.filePath) {
+        return NextResponse.json({ error: "Document file path not found" }, { status: 400 });
+      }
+      
       const pdfPath = join(process.cwd(), "public", document.filePath);
       try {
         const pdfBuffer = await readFile(pdfPath);
         content = await extractTextFromPDF(pdfBuffer as unknown as Buffer);
+        
+        // Update document with extracted text for future use
+        await Document.findByIdAndUpdate(documentId, {
+          extractedText: content
+        });
       } catch (err) {
         console.error("Failed to read/extract PDF for flashcards:", err);
         return NextResponse.json({ error: `Failed to extract text from PDF: ${(err as Error)?.message || 'unknown error'}` }, { status: 500 });
@@ -79,30 +88,57 @@ export async function POST(request: NextRequest) {
     let aiFlashcards;
     try {
       aiFlashcards = await generateFlashcardsFromText(contentForAI, document.name, safeCount);
+      
+      if (!aiFlashcards || aiFlashcards.length === 0) {
+        return NextResponse.json({ error: "AI generated no flashcards. Please try again or check your document content." }, { status: 500 });
+      }
     } catch (aiErr) {
       console.error("Gemini flashcard generation error:", aiErr);
-      return NextResponse.json({ error: `Failed to generate flashcards with AI: ${(aiErr as Error)?.message || 'unknown error'}` }, { status: 500 });
+      const errorMessage = (aiErr as Error)?.message || 'unknown error';
+      
+      if (errorMessage.includes("GEMINI_API_KEY")) {
+        return NextResponse.json({ error: "AI service not configured. Please contact administrator." }, { status: 503 });
+      }
+      
+      return NextResponse.json({ error: `Failed to generate flashcards with AI: ${errorMessage}` }, { status: 500 });
     }
 
-    // Map to DB schema
-    const toInsert = aiFlashcards.map((fc: any) => ({
-      question: fc.question,
-      answer: fc.answer,
-      difficulty: fc.difficulty || "medium",
-      documentId: String(document._id),
-      userId: session.user.id,
-      source: document.name,
-      reviewCount: 0,
-      isActive: true,
-    }));
+    // Map to DB schema with validation
+    const toInsert = aiFlashcards
+      .filter((fc: any) => fc.question && fc.answer && fc.question.trim() && fc.answer.trim())
+      .map((fc: any) => ({
+        question: fc.question.trim(),
+        answer: fc.answer.trim(),
+        difficulty: ["easy", "medium", "hard"].includes(fc.difficulty) ? fc.difficulty : "medium",
+        documentId: String(document._id),
+        userId: session.user.id,
+        source: document.name,
+        reviewCount: 0,
+        isActive: true,
+      }));
+    
+    if (toInsert.length === 0) {
+      return NextResponse.json({ error: "No valid flashcards could be generated from the document content." }, { status: 400 });
+    }
 
     // Save flashcards to database
-    const savedFlashcards = await Flashcard.insertMany(toInsert);
+    let savedFlashcards;
+    try {
+      savedFlashcards = await Flashcard.insertMany(toInsert);
+    } catch (dbErr) {
+      console.error("Database error saving flashcards:", dbErr);
+      return NextResponse.json({ error: "Failed to save flashcards to database" }, { status: 500 });
+    }
 
     // Update document's flashcard count
-    await Document.findByIdAndUpdate(documentId, {
-      flashcardsCount: savedFlashcards.length
-    });
+    try {
+      await Document.findByIdAndUpdate(documentId, {
+        flashcardsCount: savedFlashcards.length
+      });
+    } catch (updateErr) {
+      console.error("Error updating document flashcard count:", updateErr);
+      // Don't fail the request for this, just log the error
+    }
 
     return NextResponse.json({
       success: true,
@@ -310,3 +346,4 @@ function calculateNextReview(rating: string, reviewCount: number): Date {
 
   return new Date(now.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
 }
+
