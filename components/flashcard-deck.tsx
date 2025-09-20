@@ -44,6 +44,7 @@ export function FlashcardDeck({ title, description, cards, totalCards }: Flashca
   const [remainingTime, setRemainingTime] = useState<number>(30)
   const [selectedOption, setSelectedOption] = useState<string | null>(null)
   const [feedbackShown, setFeedbackShown] = useState(false)
+  const [optionsMap, setOptionsMap] = useState<Record<number, string[]>>({})
 
   // Filter cards based on study mode
   const filteredCards = cards.filter(card => {
@@ -135,6 +136,7 @@ export function FlashcardDeck({ title, description, cards, totalCards }: Flashca
     setSessionComplete(false)
     setSelectedOption(null)
     setFeedbackShown(false)
+    setOptionsMap({})
     setStudyStats({ 
       correct: 0, 
       incorrect: 0, 
@@ -151,6 +153,7 @@ export function FlashcardDeck({ title, description, cards, totalCards }: Flashca
     setSessionComplete(false)
     setSelectedOption(null)
     setFeedbackShown(false)
+    setOptionsMap({})
     setStudyStats({ 
       correct: 0, 
       incorrect: 0, 
@@ -165,6 +168,7 @@ export function FlashcardDeck({ title, description, cards, totalCards }: Flashca
     setSessionComplete(false)
     setSelectedOption(null)
     setFeedbackShown(false)
+    setOptionsMap({})
     setStudyStats({ 
       correct: 0, 
       incorrect: 0, 
@@ -182,19 +186,28 @@ export function FlashcardDeck({ title, description, cards, totalCards }: Flashca
   const accuracy = studyStats.total > 0 ? Math.round((studyStats.correct / studyStats.total) * 100) : 0
 
   // ----- QUIZ HELPERS -----
-  const getOptionsForCard = (cardIndex: number) => {
+  const buildOptionsForIndex = (cardIndex: number) => {
     const correct = filteredCards[cardIndex]
     if (!correct) return [] as string[]
-    // collect other answers as distractors
     const distractors = filteredCards
       .filter((_, idx) => idx !== cardIndex)
       .map(c => c.answer)
-    // pick up to 3 unique distractors
-    const shuffled = [...new Set(distractors)].sort(() => Math.random() - 0.5)
+    const unique = [...new Set(distractors)].filter(ans => ans && ans !== correct.answer)
+    const shuffled = unique.sort(() => Math.random() - 0.5)
     const picked = shuffled.slice(0, 3)
     const options = [...picked, correct.answer]
     return options.sort(() => Math.random() - 0.5)
   }
+
+  // Ensure options for current question are generated once
+  useEffect(() => {
+    if (!(isStudying && gameMode === 'quiz')) return
+    setOptionsMap(prev => {
+      if (prev[currentCardIndex]) return prev
+      const opts = buildOptionsForIndex(currentCardIndex)
+      return { ...prev, [currentCardIndex]: opts }
+    })
+  }, [isStudying, gameMode, currentCardIndex, filteredCards])
 
   const handleSubmitAnswer = (answer: string | null) => {
     if (!currentCard) return
@@ -524,7 +537,7 @@ export function FlashcardDeck({ title, description, cards, totalCards }: Flashca
                 <div className="space-y-3">
                   <h4 className="text-sm font-medium text-muted-foreground">Choose the correct answer</h4>
                   <div className="grid gap-3">
-                    {getOptionsForCard(currentCardIndex).map((opt) => {
+                    {(optionsMap[currentCardIndex] || []).map((opt) => {
                       const isCorrect = opt === currentCard.answer
                       const isSelected = selectedOption === opt
                       const showFeedback = feedbackShown && (isSelected || isCorrect)
