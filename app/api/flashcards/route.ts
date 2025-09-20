@@ -4,6 +4,9 @@ import { authOptions } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/mongodb";
 import Flashcard from "@/models/Flashcard";
 import Document from "@/models/Document";
+import { extractTextFromPDF, generateFlashcardsFromText } from "@/lib/gemini";
+import { readFile } from "fs/promises";
+import { join } from "path";
 
 // Generate flashcards from a document
 export async function POST(request: NextRequest) {
@@ -49,11 +52,48 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Generate flashcards (simulated for now - in real app, use AI/ML service)
-    const generatedFlashcards = await generateFlashcardsFromDocument(document, count);
+    // Get content: prefer stored extracted text; fallback to reading the PDF and extracting
+    let content: string | undefined = (document as any).extractedText;
+    if (!content || content.trim().length === 0) {
+      const pdfPath = join(process.cwd(), "public", document.filePath);
+      try {
+        const pdfBuffer = await readFile(pdfPath);
+        content = await extractTextFromPDF(pdfBuffer as unknown as Buffer);
+      } catch (err) {
+        console.error("Failed to read/extract PDF for flashcards:", err);
+        return NextResponse.json({ error: `Failed to extract text from PDF: ${(err as Error)?.message || 'unknown error'}` }, { status: 500 });
+      }
+    }
+
+    // Truncate content to control token usage
+    const MAX_LEN = 40000;
+    const contentForAI = content.length > MAX_LEN
+      ? content.substring(0, MAX_LEN) + "... [Content truncated]"
+      : content;
+
+    // Generate flashcards with Gemini
+    let aiFlashcards;
+    try {
+      aiFlashcards = await generateFlashcardsFromText(contentForAI, document.name, count);
+    } catch (aiErr) {
+      console.error("Gemini flashcard generation error:", aiErr);
+      return NextResponse.json({ error: `Failed to generate flashcards with AI: ${(aiErr as Error)?.message || 'unknown error'}` }, { status: 500 });
+    }
+
+    // Map to DB schema
+    const toInsert = aiFlashcards.map((fc: any) => ({
+      question: fc.question,
+      answer: fc.answer,
+      difficulty: fc.difficulty || "medium",
+      documentId: String(document._id),
+      userId: session.user.id,
+      source: document.name,
+      reviewCount: 0,
+      isActive: true,
+    }));
 
     // Save flashcards to database
-    const savedFlashcards = await Flashcard.insertMany(generatedFlashcards);
+    const savedFlashcards = await Flashcard.insertMany(toInsert);
 
     // Update document's flashcard count
     await Document.findByIdAndUpdate(documentId, {
@@ -237,58 +277,7 @@ export async function DELETE(request: NextRequest) {
   }
 }
 
-// Helper function to generate flashcards from document (simulated)
-async function generateFlashcardsFromDocument(document: any, count: number) {
-  // This is a simulation - in a real app, you'd use AI/ML services
-  // to extract content from the PDF and generate questions/answers
-  
-  const sampleQuestions = [
-    {
-      question: `What is the main topic discussed in ${document.name}?`,
-      answer: `The main topic in ${document.name} covers fundamental concepts and principles related to the subject matter.`,
-      difficulty: "easy" as const
-    },
-    {
-      question: `How does ${document.name} explain the key concepts?`,
-      answer: `${document.name} provides detailed explanations with examples and case studies to illustrate the key concepts.`,
-      difficulty: "medium" as const
-    },
-    {
-      question: `What are the practical applications mentioned in ${document.name}?`,
-      answer: `The document outlines several practical applications including real-world scenarios and implementation strategies.`,
-      difficulty: "hard" as const
-    },
-    {
-      question: `What methodology is used in ${document.name}?`,
-      answer: `The document employs a systematic approach with clear methodology and structured analysis.`,
-      difficulty: "medium" as const
-    },
-    {
-      question: `What are the key findings in ${document.name}?`,
-      answer: `The key findings include significant insights and conclusions drawn from the research and analysis presented.`,
-      difficulty: "hard" as const
-    }
-  ];
-
-  const flashcards = [];
-  const questionsToUse = sampleQuestions.slice(0, Math.min(count, sampleQuestions.length));
-
-  for (let i = 0; i < questionsToUse.length; i++) {
-    const q = questionsToUse[i];
-    flashcards.push({
-      question: q.question,
-      answer: q.answer,
-      difficulty: q.difficulty,
-      documentId: document._id,
-      userId: document.userId,
-      source: document.name,
-      reviewCount: 0,
-      isActive: true
-    });
-  }
-
-  return flashcards;
-}
+// Removed simulated generator in favor of Gemini-backed generation
 
 // Helper function to calculate next review date
 function calculateNextReview(rating: string, reviewCount: number): Date {

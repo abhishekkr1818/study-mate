@@ -43,11 +43,18 @@ export default function FlashcardsPage() {
     
     try {
       setLoading(true)
-      const response = await fetch("/api/documents")
-      const data = await response.json()
+      const response = await fetch("/api/documents", { headers: { Accept: "application/json" } })
+      let data: any = null
+      const contentType = response.headers.get("content-type") || ""
+      if (contentType.includes("application/json")) {
+        try { data = await response.json() } catch { data = null }
+      } else {
+        const text = await response.text()
+        console.error("Non-JSON response while fetching documents:", text)
+      }
       
       if (response.ok) {
-        setDocuments(data.documents || [])
+        setDocuments((data?.documents) || [])
       }
     } catch (error) {
       console.error("Error fetching documents:", error)
@@ -64,11 +71,18 @@ export default function FlashcardsPage() {
         ? `/api/flashcards?documentId=${documentId}`
         : "/api/flashcards"
       
-      const response = await fetch(url)
-      const data = await response.json()
+      const response = await fetch(url, { headers: { Accept: "application/json" } })
+      let data: any = null
+      const contentType = response.headers.get("content-type") || ""
+      if (contentType.includes("application/json")) {
+        try { data = await response.json() } catch { data = null }
+      } else {
+        const text = await response.text()
+        console.error("Non-JSON response while fetching flashcards:", text)
+      }
       
       if (response.ok) {
-        setFlashcards(data.flashcards || [])
+        setFlashcards((data?.flashcards) || [])
       }
     } catch (error) {
       console.error("Error fetching flashcards:", error)
@@ -81,18 +95,25 @@ export default function FlashcardsPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Accept": "application/json",
         },
         body: JSON.stringify({ documentId, count: 10 }),
       })
-
-      const data = await response.json()
+      let data: any = null
+      const contentType = response.headers.get("content-type") || ""
+      if (contentType.includes("application/json")) {
+        try { data = await response.json() } catch { data = null }
+      } else {
+        const text = await response.text()
+        console.error("Non-JSON response after generateFlashcards:", text)
+      }
       
       if (response.ok) {
         await fetchDocuments() // Refresh documents to update counts
         await fetchFlashcards(documentId) // Refresh flashcards
-        alert(`Generated ${data.count} flashcards successfully!`)
+        alert(`Generated ${data?.count ?? ""} flashcards successfully!`)
       } else {
-        alert(`Failed to generate flashcards: ${data.error}`)
+        alert(`Failed to generate flashcards: ${data?.error || response.statusText}`)
       }
     } catch (error) {
       console.error("Error generating flashcards:", error)
@@ -104,14 +125,19 @@ export default function FlashcardsPage() {
     try {
       const response = await fetch(`/api/flashcards?id=${flashcardId}`, {
         method: "DELETE",
+        headers: { Accept: "application/json" },
       })
       
       if (response.ok) {
         await fetchFlashcards(selectedDeck || undefined)
         await fetchDocuments() // Refresh documents to update counts
       } else {
-        const data = await response.json()
-        alert(`Failed to delete flashcard: ${data.error}`)
+        let data: any = null
+        const contentType = response.headers.get("content-type") || ""
+        if (contentType.includes("application/json")) {
+          try { data = await response.json() } catch { /* ignore */ }
+        }
+        alert(`Failed to delete flashcard: ${data?.error || response.statusText}`)
       }
     } catch (error) {
       console.error("Error deleting flashcard:", error)
@@ -125,6 +151,7 @@ export default function FlashcardsPage() {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
+          "Accept": "application/json",
         },
         body: JSON.stringify({
           flashcardId,
@@ -133,12 +160,15 @@ export default function FlashcardsPage() {
           difficulty: data.difficulty,
         }),
       })
-
       if (response.ok) {
         await fetchFlashcards(selectedDeck || undefined)
       } else {
-        const errorData = await response.json()
-        alert(`Failed to update flashcard: ${errorData.error}`)
+        let errorData: any = null
+        const contentType = response.headers.get("content-type") || ""
+        if (contentType.includes("application/json")) {
+          try { errorData = await response.json() } catch { /* ignore */ }
+        }
+        alert(`Failed to update flashcard: ${errorData?.error || response.statusText}`)
       }
     } catch (error) {
       console.error("Error updating flashcard:", error)

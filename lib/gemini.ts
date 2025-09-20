@@ -6,6 +6,72 @@ if (!apiKey) {
   // Defer throwing to runtime functions so API routes can return a helpful error
   console.warn("GEMINI_API_KEY is not set. Summaries will fail until configured.");
 }
+
+// Generate flashcards from text using Gemini
+export async function generateFlashcardsFromText(
+  content: string,
+  documentName: string,
+  count: number = 10
+): Promise<GeminiFlashcardItem[]> {
+  try {
+    if (!apiKey || !genAI) {
+      throw new Error("Missing GEMINI_API_KEY. Please set it in .env.local and restart the server.");
+    }
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+    const capped = Math.min(Math.max(count, 3), 30);
+    const prompt = `
+You are an expert learning assistant. Create ${capped} high-quality flashcards from the following document content.
+
+Document: ${documentName}
+
+Requirements:
+- Use a mix of easy/medium/hard difficulties.
+- Questions must be clear and atomic; answers concise and accurate.
+- Avoid duplicates; cover diverse key points, definitions, formulas, and facts.
+
+Return ONLY valid JSON, no extra text, using this shape:
+[
+  { "question": "...", "answer": "...", "difficulty": "easy|medium|hard" },
+  ...
+]
+
+Content:
+${content}
+`;
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+
+    // Parse JSON array (handle fenced code blocks)
+    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    const jsonCandidate = fenced ? fenced[1] : text;
+    // Extract array portion if extra text exists
+    const firstBracket = jsonCandidate.indexOf("[");
+    const lastBracket = jsonCandidate.lastIndexOf("]");
+    const toParse = (firstBracket !== -1 && lastBracket !== -1)
+      ? jsonCandidate.substring(firstBracket, lastBracket + 1)
+      : jsonCandidate;
+
+    const parsed = JSON.parse(toParse) as any[];
+    // Basic validation and normalization
+    const items: GeminiFlashcardItem[] = parsed
+      .filter(Boolean)
+      .map((it) => ({
+        question: String(it.question || "").trim(),
+        answer: String(it.answer || "").trim(),
+        difficulty: (it.difficulty === "easy" || it.difficulty === "medium" || it.difficulty === "hard") ? it.difficulty : "medium",
+      }))
+      .filter(it => it.question.length > 0 && it.answer.length > 0);
+
+    if (items.length === 0) throw new Error("AI returned no flashcards");
+    return items.slice(0, capped);
+  } catch (error) {
+    console.error("Error generating flashcards with Gemini:", error);
+    throw new Error((error as Error)?.message || "Failed to generate flashcards");
+  }
+}
 const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null as any;
 
 export interface SummaryOptions {
@@ -18,6 +84,12 @@ export interface GeminiSummaryResponse {
   content: string;
   wordCount: number;
   readTime: number;
+}
+
+export interface GeminiFlashcardItem {
+  question: string;
+  answer: string;
+  difficulty?: "easy" | "medium" | "hard";
 }
 
 export async function generateSummaryFromPDF(
