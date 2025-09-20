@@ -107,6 +107,17 @@ export async function POST(request: NextRequest) {
       document.status = "completed";
       document.processedDate = new Date();
       await document.save();
+
+      // Kick off background ingestion (embeddings)
+      try {
+        await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/ingest`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ documentId: String(document._id) })
+        }).catch(() => undefined);
+      } catch {
+        // ignore background trigger errors
+      }
     } catch (parseErr: any) {
       console.error("PDF parse error:", parseErr);
       document.status = "error";
@@ -135,6 +146,74 @@ export async function POST(request: NextRequest) {
     console.error("Upload error:", error);
     return NextResponse.json(
       { error: "Failed to upload file" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    // Check authentication
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Connect to database
+    await connectToDatabase();
+
+    const { id, extractedText, status, ingest } = await request.json();
+    if (!id) {
+      return NextResponse.json({ error: "Document ID required" }, { status: 400 });
+    }
+
+    const update: any = {};
+    if (typeof extractedText === 'string') update.extractedText = extractedText;
+    if (typeof status === 'string') update.status = status;
+    if (Object.keys(update).length === 0) {
+      return NextResponse.json({ error: "No updates provided" }, { status: 400 });
+    }
+
+    const doc = await Document.findOneAndUpdate(
+      { _id: id, userId: session.user.id },
+      { $set: update },
+      { new: true }
+    );
+
+    if (!doc) {
+      return NextResponse.json({ error: "Document not found" }, { status: 404 });
+    }
+
+    // Optionally trigger ingestion of embeddings
+    if (ingest && typeof doc.extractedText === 'string' && doc.extractedText.trim().length > 0) {
+      try {
+        await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/ingest`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ documentId: doc._id })
+        }).catch(() => undefined);
+      } catch {
+        // ignore background trigger errors
+      }
+    }
+
+    return NextResponse.json({ success: true, document: {
+      id: doc._id,
+      name: doc.name,
+      originalName: doc.originalName,
+      fileName: doc.fileName,
+      fileSize: doc.fileSize,
+      status: doc.status,
+      uploadDate: doc.uploadDate,
+      filePath: doc.filePath,
+      extractedText: doc.extractedText ?? null,
+      errorMessage: doc.errorMessage ?? null,
+    } });
+
+  } catch (error) {
+    console.error("Update document error:", error);
+    return NextResponse.json(
+      { error: "Failed to update document" },
       { status: 500 }
     );
   }
