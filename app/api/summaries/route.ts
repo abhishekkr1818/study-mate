@@ -208,6 +208,7 @@ export async function PUT(request: NextRequest) {
       readTime: summaryData.readTime,
       generatedAt: new Date(),
       isActive: true,
+      relatedDocumentIds: documentIds,
     });
 
     await summary.save();

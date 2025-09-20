@@ -28,6 +28,7 @@ interface Summary {
   wordCount: number
   readTime: number
   generatedAt: string
+  relatedDocumentIds?: string[]
 }
 
 export default function SummariesPage() {
@@ -411,6 +412,18 @@ export default function SummariesPage() {
                           </span>
                           <span>{summary.wordCount} words</span>
                           <span>Generated {new Date(summary.generatedAt).toLocaleDateString()}</span>
+                          {summary.type === "cross-document" && summary.relatedDocumentIds?.length ? (
+                            <span className="flex items-center gap-1">
+                              <span>Across:</span>
+                              <span className="flex flex-wrap gap-1">
+                                {summary.relatedDocumentIds.map((id) => (
+                                  <span key={id} className="px-2 py-0.5 rounded bg-muted text-foreground/80 text-xs">
+                                    {documents.find(d => d._id === id)?.name || id}
+                                  </span>
+                                ))}
+                              </span>
+                            </span>
+                          ) : null}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -483,6 +496,18 @@ export default function SummariesPage() {
                         <span>{summary.wordCount} words</span>
                         <span>{summary.readTime} min read</span>
                         <span>Generated {new Date(summary.generatedAt).toLocaleDateString()}</span>
+                        {summary.relatedDocumentIds?.length ? (
+                          <span className="flex items-center gap-1">
+                            <span>Across:</span>
+                            <span className="flex flex-wrap gap-1">
+                              {summary.relatedDocumentIds.map((id) => (
+                                <span key={id} className="px-2 py-0.5 rounded bg-muted text-foreground/80 text-xs">
+                                  {documents.find(d => d._id === id)?.name || id}
+                                </span>
+                              ))}
+                            </span>
+                          </span>
+                        ) : null}
                       </div>
                     </CardHeader>
                     <CardContent>

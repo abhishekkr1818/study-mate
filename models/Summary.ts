@@ -13,6 +13,7 @@ export interface ISummary {
   generatedAt: Date;
   isActive: boolean; // for soft delete
   tags?: string[];
+  relatedDocumentIds?: string[]; // for cross-document summaries
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -38,6 +39,7 @@ const SummarySchema = new Schema<ISummary>(
     generatedAt: { type: Date, default: Date.now },
     isActive: { type: Boolean, default: true },
     tags: [{ type: String }],
+    relatedDocumentIds: [{ type: String }],
   },
   { timestamps: true }
 );
