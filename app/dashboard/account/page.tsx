@@ -1,3 +1,6 @@
+"use client"
+
+import { useEffect, useMemo, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,6 +14,176 @@ import { Separator } from "@/components/ui/separator"
 import { User, Settings, CreditCard, Bell, Shield, Download, Trash2, Github, Mail } from "lucide-react"
 
 export default function AccountPage() {
+  // Profile state
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [name, setName] = useState("")
+  const [email, setEmail] = useState("")
+  const [role, setRole] = useState("student")
+  const [image, setImage] = useState<string | undefined>(undefined)
+
+  // Split name helpers for UI
+  const [firstName, setFirstName] = useState("")
+  const [lastName, setLastName] = useState("")
+  useEffect(() => {
+    const parts = (name || "").trim().split(" ")
+    setFirstName(parts[0] || "")
+    setLastName(parts.slice(1).join(" ") || "")
+  }, [name])
+  const combinedName = useMemo(() => {
+    return [firstName, lastName].filter(Boolean).join(" ")
+  }, [firstName, lastName])
+
+  // Settings state
+  const [institution, setInstitution] = useState("")
+  const [summaryLength, setSummaryLength] = useState("detailed")
+  const [flashcardDifficulty, setFlashcardDifficulty] = useState("mixed")
+  const [emailNotifications, setEmailNotifications] = useState(true)
+  const [weeklySummary, setWeeklySummary] = useState(true)
+  const [documentComplete, setDocumentComplete] = useState(true)
+  const [theme, setTheme] = useState("system")
+
+  // Security state
+  const [currentPassword, setCurrentPassword] = useState("")
+  const [newPassword, setNewPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [changingPwd, setChangingPwd] = useState(false)
+
+  // Load profile and settings
+  useEffect(() => {
+    let mounted = true
+    async function load() {
+      try {
+        setLoading(true)
+        const [pRes, sRes] = await Promise.all([
+          fetch("/api/account/profile", { headers: { Accept: "application/json" } }),
+          fetch("/api/account/settings", { headers: { Accept: "application/json" } }),
+        ])
+        if (pRes.ok) {
+          const { user } = await pRes.json()
+          if (mounted && user) {
+            setName(user.name || "")
+            setEmail(user.email || "")
+            setRole(user.role || "student")
+            setImage(user.image || undefined)
+          }
+        }
+        if (sRes.ok) {
+          const { settings } = await sRes.json()
+          if (mounted && settings) {
+            setSummaryLength(settings.summaryLength || "detailed")
+            setFlashcardDifficulty(settings.flashcardDifficulty || "mixed")
+            setEmailNotifications(!!settings.emailNotifications)
+            setWeeklySummary(!!settings.weeklySummary)
+            setDocumentComplete(!!settings.documentComplete)
+            setTheme(settings.theme || "system")
+            setInstitution(settings.institution || "")
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load account data", e)
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    }
+    load()
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  const handleSaveProfile = async () => {
+    try {
+      setSaving(true)
+      // Update profile
+      const pRes = await fetch("/api/account/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ name: combinedName, email, role, image }),
+      })
+      if (!pRes.ok) {
+        const err = await pRes.json().catch(() => ({}))
+        throw new Error(err?.error || "Failed to update profile")
+      }
+      // Update settings
+      const sRes = await fetch("/api/account/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ summaryLength, flashcardDifficulty, emailNotifications, weeklySummary, documentComplete, theme, institution }),
+      })
+      if (!sRes.ok) {
+        const err = await sRes.json().catch(() => ({}))
+        throw new Error(err?.error || "Failed to update settings")
+      }
+      alert("Profile updated")
+      setName(combinedName)
+    } catch (e: any) {
+      alert(e?.message || "Failed to save changes")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleChangePassword = async () => {
+    try {
+      if (newPassword !== confirmPassword) {
+        alert("New password and confirmation do not match")
+        return
+      }
+      setChangingPwd(true)
+      const res = await fetch("/api/account/security", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || "Failed to update password")
+      alert("Password updated")
+      setCurrentPassword("")
+      setNewPassword("")
+      setConfirmPassword("")
+    } catch (e: any) {
+      alert(e?.message || "Failed to update password")
+    } finally {
+      setChangingPwd(false)
+    }
+  }
+
+  const handleExport = async () => {
+    try {
+      const res = await fetch("/api/account/export")
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.error || "Failed to export data")
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `studymate-export-${Date.now()}.json`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e: any) {
+      alert(e?.message || "Export failed")
+    }
+  }
+
+  const handleDelete = async () => {
+    try {
+      if (!confirm("This will permanently delete your account and all data. Continue?")) return
+      const res = await fetch("/api/account/delete", { method: "DELETE", headers: { "x-confirm-delete": "true" } })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || "Failed to delete account")
+      alert("Account deleted. You will be signed out.")
+      // Best-effort signout/redirect
+      window.location.href = "/login"
+    } catch (e: any) {
+      alert(e?.message || "Delete failed")
+    }
+  }
+
   return (
     <div className="p-6 space-y-6">
       <div className="space-y-2">
@@ -47,12 +220,12 @@ export default function AccountPage() {
             <CardContent className="space-y-6">
               <div className="flex items-center gap-6">
                 <Avatar className="h-20 w-20">
-                  <AvatarImage src="/student-avatar.png" alt="Profile" />
+                  <AvatarImage src={image || "/student-avatar.png"} alt="Profile" />
                   <AvatarFallback className="text-lg">AJ</AvatarFallback>
                 </Avatar>
                 <div className="space-y-2">
-                  <Button size="sm">Change Photo</Button>
-                  <Button variant="outline" size="sm" className="bg-transparent">
+                  <Button size="sm" disabled>Change Photo</Button>
+                  <Button variant="outline" size="sm" className="bg-transparent" disabled>
                     Remove
                   </Button>
                 </div>
@@ -61,19 +234,19 @@ export default function AccountPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="firstName">First Name</Label>
-                  <Input id="firstName" defaultValue="Alex" className="bg-background/50" />
+                  <Input id="firstName" value={firstName} onChange={(e) => setFirstName(e.target.value)} className="bg-background/50" />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="lastName">Last Name</Label>
-                  <Input id="lastName" defaultValue="Johnson" className="bg-background/50" />
+                  <Input id="lastName" value={lastName} onChange={(e) => setLastName(e.target.value)} className="bg-background/50" />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" defaultValue="alex@university.edu" className="bg-background/50" />
+                  <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="bg-background/50" />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="role">Role</Label>
-                  <Select defaultValue="student">
+                  <Select value={role} onValueChange={setRole}>
                     <SelectTrigger className="bg-background/50">
                       <SelectValue />
                     </SelectTrigger>
@@ -89,10 +262,10 @@ export default function AccountPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="institution">Institution (Optional)</Label>
-                <Input id="institution" defaultValue="University of Technology" className="bg-background/50" />
+                <Input id="institution" value={institution} onChange={(e) => setInstitution(e.target.value)} className="bg-background/50" />
               </div>
 
-              <Button>Save Changes</Button>
+              <Button onClick={handleSaveProfile} disabled={saving || loading}>{saving ? "Saving..." : "Save Changes"}</Button>
             </CardContent>
           </Card>
 
@@ -143,7 +316,7 @@ export default function AccountPage() {
                   <p className="font-medium">Email Notifications</p>
                   <p className="text-sm text-muted-foreground">Receive updates about your study progress</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={emailNotifications} onCheckedChange={setEmailNotifications} />
               </div>
               <Separator />
               <div className="flex items-center justify-between">
@@ -151,7 +324,7 @@ export default function AccountPage() {
                   <p className="font-medium">Weekly Study Summary</p>
                   <p className="text-sm text-muted-foreground">Get a weekly report of your learning activity</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={weeklySummary} onCheckedChange={setWeeklySummary} />
               </div>
               <Separator />
               <div className="flex items-center justify-between">
@@ -159,7 +332,7 @@ export default function AccountPage() {
                   <p className="font-medium">Document Processing Complete</p>
                   <p className="text-sm text-muted-foreground">Notify when document ingestion finishes</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={documentComplete} onCheckedChange={setDocumentComplete} />
               </div>
             </CardContent>
           </Card>
@@ -172,7 +345,7 @@ export default function AccountPage() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label>Default Summary Length</Label>
-                <Select defaultValue="detailed">
+                <Select value={summaryLength} onValueChange={setSummaryLength}>
                   <SelectTrigger className="bg-background/50">
                     <SelectValue />
                   </SelectTrigger>
@@ -185,7 +358,7 @@ export default function AccountPage() {
               </div>
               <div className="space-y-2">
                 <Label>Flashcard Difficulty</Label>
-                <Select defaultValue="mixed">
+                <Select value={flashcardDifficulty} onValueChange={setFlashcardDifficulty}>
                   <SelectTrigger className="bg-background/50">
                     <SelectValue />
                   </SelectTrigger>
@@ -202,7 +375,10 @@ export default function AccountPage() {
                   <p className="font-medium">Dark Mode</p>
                   <p className="text-sm text-muted-foreground">Use dark theme across the application</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={theme === "dark"} onCheckedChange={(v) => setTheme(v ? "dark" : "light")} />
+              </div>
+              <div>
+                <Button onClick={handleSaveProfile} disabled={saving || loading}>{saving ? "Saving..." : "Save Preferences"}</Button>
               </div>
             </CardContent>
           </Card>
@@ -283,17 +459,17 @@ export default function AccountPage() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="currentPassword">Current Password</Label>
-                <Input id="currentPassword" type="password" className="bg-background/50" />
+                <Input id="currentPassword" type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className="bg-background/50" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="newPassword">New Password</Label>
-                <Input id="newPassword" type="password" className="bg-background/50" />
+                <Input id="newPassword" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="bg-background/50" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="confirmPassword">Confirm New Password</Label>
-                <Input id="confirmPassword" type="password" className="bg-background/50" />
+                <Input id="confirmPassword" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="bg-background/50" />
               </div>
-              <Button>Update Password</Button>
+              <Button onClick={handleChangePassword} disabled={changingPwd}>{changingPwd ? "Updating..." : "Update Password"}</Button>
             </CardContent>
           </Card>
 
@@ -308,7 +484,7 @@ export default function AccountPage() {
                   <p className="font-medium">Export Data</p>
                   <p className="text-sm text-muted-foreground">Download all your data in JSON format</p>
                 </div>
-                <Button variant="outline" className="gap-2 bg-transparent">
+                <Button variant="outline" className="gap-2 bg-transparent" onClick={handleExport}>
                   <Download className="h-4 w-4" />
                   Export
                 </Button>
@@ -319,7 +495,7 @@ export default function AccountPage() {
                   <p className="font-medium text-destructive">Delete Account</p>
                   <p className="text-sm text-muted-foreground">Permanently delete your account and all data</p>
                 </div>
-                <Button variant="destructive" className="gap-2">
+                <Button variant="destructive" className="gap-2" onClick={handleDelete}>
                   <Trash2 className="h-4 w-4" />
                   Delete
                 </Button>
