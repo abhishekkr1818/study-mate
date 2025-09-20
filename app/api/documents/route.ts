@@ -6,6 +6,7 @@ import Document from "@/models/Document";
 import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
+import { uploadToCloudinary } from "@/lib/cloudinary";
 
 // Ensure Node.js runtime (required for fs, Buffer, and pdf-parse)
 export const runtime = "nodejs";
@@ -47,24 +48,49 @@ export async function POST(request: NextRequest) {
     const fileExtension = file.name.split('.').pop();
     const fileName = `${timestamp}_${randomString}.${fileExtension}`;
     
-    // Create uploads directory if it doesn't exist
-    const uploadsDir = join(process.cwd(), "public", "uploads", "documents");
-    if (!existsSync(uploadsDir)) {
-      await mkdir(uploadsDir, { recursive: true });
+    let filePath: string;
+    let fileUrl: string | undefined;
+    
+    // Choose storage method based on environment
+    if (process.env.NODE_ENV === "production" && process.env.CLOUDINARY_CLOUD_NAME) {
+      // Use Cloudinary for production
+      try {
+        const uploadResult = await uploadToCloudinary(file);
+        filePath = uploadResult.public_id;
+        fileUrl = uploadResult.secure_url;
+      } catch (cloudError) {
+        console.error("Cloudinary upload failed, falling back to local storage:", cloudError);
+        // Fallback to local storage
+        const uploadsDir = join(process.cwd(), "public", "uploads", "documents");
+        if (!existsSync(uploadsDir)) {
+          await mkdir(uploadsDir, { recursive: true });
+        }
+        filePath = join(uploadsDir, fileName);
+        const bytes = await file.arrayBuffer();
+        const buffer = Buffer.from(bytes);
+        await writeFile(filePath, buffer);
+        filePath = `/uploads/documents/${fileName}`;
+      }
+    } else {
+      // Use local storage for development
+      const uploadsDir = join(process.cwd(), "public", "uploads", "documents");
+      if (!existsSync(uploadsDir)) {
+        await mkdir(uploadsDir, { recursive: true });
+      }
+      filePath = join(uploadsDir, fileName);
+      const bytes = await file.arrayBuffer();
+      const buffer = Buffer.from(bytes);
+      await writeFile(filePath, buffer);
+      filePath = `/uploads/documents/${fileName}`;
     }
-
-    // Save file to disk
-    const filePath = join(uploadsDir, fileName);
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-    await writeFile(filePath, buffer);
 
     // Save document info to database (initially processing)
     const document = new Document({
       name: file.name.replace(/\.[^/.]+$/, ""), // Remove extension for display name
       originalName: file.name,
       fileName: fileName,
-      filePath: `/uploads/documents/${fileName}`,
+      filePath: filePath,
+      fileUrl: fileUrl,
       fileSize: file.size,
       mimeType: file.type,
       userId: session.user.id,

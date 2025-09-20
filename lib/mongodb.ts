@@ -25,11 +25,30 @@ export async function connectToDatabase() {
   if (cached!.conn) return cached!.conn;
 
   if (!cached!.promise) {
-    cached!.promise = mongoose.connect(MONGODB_URI, {
+    const opts = {
+      bufferCommands: false,
       dbName: process.env.MONGODB_DB_NAME || "studymate",
-    });
+    };
+
+    // Add production-specific options
+    if (process.env.NODE_ENV === "production") {
+      Object.assign(opts, {
+        maxPoolSize: 10,
+        serverSelectionTimeoutMS: 5000,
+        socketTimeoutMS: 45000,
+        family: 4, // Use IPv4, skip trying IPv6
+      });
+    }
+
+    cached!.promise = mongoose.connect(MONGODB_URI, opts);
   }
 
-  cached!.conn = await cached!.promise;
+  try {
+    cached!.conn = await cached!.promise;
+  } catch (e) {
+    cached!.promise = null;
+    throw e;
+  }
+
   return cached!.conn;
 }

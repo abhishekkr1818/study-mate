@@ -8,6 +8,10 @@ const nextConfig = {
   },
   images: {
     unoptimized: true,
+    domains: ['localhost'],
+  },
+  experimental: {
+    serverComponentsExternalPackages: ['pdf-parse', 'pdfjs-dist'],
   },
   webpack: (config, { isServer }) => {
     // Prevent pdfjs worker from being bundled/resolved in Node server build
@@ -28,6 +32,11 @@ const nextConfig = {
     }
     return config
   },
+  // Vercel-specific optimizations
+  output: 'standalone',
+  poweredByHeader: false,
+  compress: true,
+  generateEtags: false,
 }
 
 export default nextConfig

@@ -6,6 +6,7 @@ export interface IDocument {
   originalName: string;
   fileName: string; // stored filename
   filePath: string; // path to the file
+  fileUrl?: string; // cloud URL for the file
   fileSize: number; // in bytes
   mimeType: string;
   userId: string; // reference to User
@@ -27,6 +28,7 @@ const DocumentSchema = new Schema<IDocument>(
     originalName: { type: String, required: true },
     fileName: { type: String, required: true },
     filePath: { type: String, required: true },
+    fileUrl: { type: String },
     fileSize: { type: Number, required: true },
     mimeType: { type: String, required: true },
     userId: { type: String, required: true, index: true },
