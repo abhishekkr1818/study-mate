@@ -9,10 +9,10 @@
   "env": {
     "NODE_ENV": "production"
   },
-  "routes": [
+  "rewrites": [
     {
-      "src": "/uploads/(.*)",
-      "dest": "/uploads/$1"
+      "source": "/uploads/:path*",
+      "destination": "/uploads/:path*"
     }
   ],
   "headers": [
