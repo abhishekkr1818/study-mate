@@ -9,7 +9,7 @@ import { Flashcard } from "@/components/flashcard"
 import { Play, Pause, RotateCcw, Download, Settings } from "lucide-react"
 
 interface FlashcardData {
-  id: string
+  _id: string
   question: string
   answer: string
   difficulty: "easy" | "medium" | "hard"
@@ -17,6 +17,7 @@ interface FlashcardData {
   lastReviewed?: Date
   nextReview?: Date
   reviewCount: number
+  rating?: "again" | "hard" | "medium" | "easy"
 }
 
 interface FlashcardDeckProps {
@@ -38,13 +39,31 @@ export function FlashcardDeck({ title, description, cards, totalCards }: Flashca
   const currentCard = cards[currentCardIndex]
   const progress = ((currentCardIndex + 1) / cards.length) * 100
 
-  const handleCardRating = (rating: "easy" | "medium" | "hard" | "again") => {
+  const handleCardRating = async (rating: "easy" | "medium" | "hard" | "again") => {
     setStudyStats((prev) => ({
       ...prev,
       correct: rating === "easy" || rating === "medium" ? prev.correct + 1 : prev.correct,
       incorrect: rating === "again" || rating === "hard" ? prev.incorrect + 1 : prev.incorrect,
       total: prev.total + 1,
     }))
+
+    // Update flashcard rating in database
+    if (currentCard) {
+      try {
+        await fetch("/api/flashcards", {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            flashcardId: currentCard._id,
+            rating: rating,
+          }),
+        })
+      } catch (error) {
+        console.error("Error updating flashcard rating:", error)
+      }
+    }
 
     // Move to next card
     if (currentCardIndex < cards.length - 1) {

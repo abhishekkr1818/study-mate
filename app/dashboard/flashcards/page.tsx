@@ -1,74 +1,190 @@
+"use client"
+
+import { useState, useEffect } from "react"
 import { FlashcardDeck } from "@/components/flashcard-deck"
+import { FlashcardEdit } from "@/components/flashcard-edit"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Zap, Plus, BookOpen, TrendingUp, Clock } from "lucide-react"
+import { Zap, Plus, BookOpen, TrendingUp, Clock, FileText, RefreshCw, Edit, Trash2 } from "lucide-react"
+import { useSession } from "next-auth/react"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { MoreVertical } from "lucide-react"
 
-const mockFlashcards = [
-  {
-    id: "1",
-    question: "What are the three main types of machine learning?",
-    answer:
-      "The three main types are: 1) Supervised Learning - uses labeled data, 2) Unsupervised Learning - finds patterns in unlabeled data, 3) Reinforcement Learning - learns through rewards and penalties.",
-    difficulty: "medium" as const,
-    source: "ML Fundamentals.pdf",
-    reviewCount: 3,
-  },
-  {
-    id: "2",
-    question: "Define overfitting in machine learning.",
-    answer:
-      "Overfitting occurs when a model learns the training data too well, including noise and random fluctuations, resulting in poor performance on new, unseen data.",
-    difficulty: "hard" as const,
-    source: "ML Fundamentals.pdf",
-    reviewCount: 1,
-  },
-  {
-    id: "3",
-    question: "What is the purpose of cross-validation?",
-    answer:
-      "Cross-validation is used to assess how well a model will generalize to new data by splitting the dataset into multiple folds and training/testing on different combinations.",
-    difficulty: "easy" as const,
-    source: "ML Fundamentals.pdf",
-    reviewCount: 5,
-  },
-]
+interface Document {
+  _id: string
+  name: string
+  flashcardsCount: number
+  status: string
+}
 
-const mockDecks = [
-  {
-    id: "1",
-    title: "Machine Learning Fundamentals",
-    description: "Core concepts and algorithms in machine learning",
-    cardCount: 45,
-    newCards: 12,
-    reviewCards: 8,
-    source: "ML Fundamentals.pdf",
-    lastStudied: "2024-01-15",
-  },
-  {
-    id: "2",
-    title: "Statistics for Data Science",
-    description: "Statistical methods and hypothesis testing",
-    cardCount: 32,
-    newCards: 5,
-    reviewCards: 15,
-    source: "Statistics.pdf",
-    lastStudied: "2024-01-14",
-  },
-  {
-    id: "3",
-    title: "Research Methods",
-    description: "Qualitative and quantitative research approaches",
-    cardCount: 28,
-    newCards: 8,
-    reviewCards: 3,
-    source: "Research Methods.pdf",
-    lastStudied: "2024-01-13",
-  },
-]
+interface FlashcardDeck {
+  documentId: string
+  title: string
+  description: string
+  cardCount: number
+  newCards: number
+  reviewCards: number
+  source: string
+  lastStudied?: string
+}
 
 export default function FlashcardsPage() {
+  const [documents, setDocuments] = useState<Document[]>([])
+  const [flashcards, setFlashcards] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedDeck, setSelectedDeck] = useState<string | null>(null)
+  const [editMode, setEditMode] = useState(false)
+  const { data: session } = useSession()
+
+  const fetchDocuments = async () => {
+    if (!session?.user?.id) return
+    
+    try {
+      setLoading(true)
+      const response = await fetch("/api/documents")
+      const data = await response.json()
+      
+      if (response.ok) {
+        setDocuments(data.documents || [])
+      }
+    } catch (error) {
+      console.error("Error fetching documents:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchFlashcards = async (documentId?: string) => {
+    if (!session?.user?.id) return
+    
+    try {
+      const url = documentId 
+        ? `/api/flashcards?documentId=${documentId}`
+        : "/api/flashcards"
+      
+      const response = await fetch(url)
+      const data = await response.json()
+      
+      if (response.ok) {
+        setFlashcards(data.flashcards || [])
+      }
+    } catch (error) {
+      console.error("Error fetching flashcards:", error)
+    }
+  }
+
+  const generateFlashcards = async (documentId: string) => {
+    try {
+      const response = await fetch("/api/flashcards", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ documentId, count: 10 }),
+      })
+
+      const data = await response.json()
+      
+      if (response.ok) {
+        await fetchDocuments() // Refresh documents to update counts
+        await fetchFlashcards(documentId) // Refresh flashcards
+        alert(`Generated ${data.count} flashcards successfully!`)
+      } else {
+        alert(`Failed to generate flashcards: ${data.error}`)
+      }
+    } catch (error) {
+      console.error("Error generating flashcards:", error)
+      alert("Failed to generate flashcards")
+    }
+  }
+
+  const deleteFlashcard = async (flashcardId: string) => {
+    try {
+      const response = await fetch(`/api/flashcards?id=${flashcardId}`, {
+        method: "DELETE",
+      })
+      
+      if (response.ok) {
+        await fetchFlashcards(selectedDeck || undefined)
+        await fetchDocuments() // Refresh documents to update counts
+      } else {
+        const data = await response.json()
+        alert(`Failed to delete flashcard: ${data.error}`)
+      }
+    } catch (error) {
+      console.error("Error deleting flashcard:", error)
+      alert("Failed to delete flashcard")
+    }
+  }
+
+  const updateFlashcard = async (flashcardId: string, data: { question: string; answer: string; difficulty: string }) => {
+    try {
+      const response = await fetch("/api/flashcards", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          flashcardId,
+          question: data.question,
+          answer: data.answer,
+          difficulty: data.difficulty,
+        }),
+      })
+
+      if (response.ok) {
+        await fetchFlashcards(selectedDeck || undefined)
+      } else {
+        const errorData = await response.json()
+        alert(`Failed to update flashcard: ${errorData.error}`)
+      }
+    } catch (error) {
+      console.error("Error updating flashcard:", error)
+      alert("Failed to update flashcard")
+    }
+  }
+
+  useEffect(() => {
+    fetchDocuments()
+  }, [session])
+
+  useEffect(() => {
+    if (selectedDeck) {
+      fetchFlashcards(selectedDeck)
+    } else {
+      fetchFlashcards()
+    }
+  }, [selectedDeck, session])
+
+  // Group flashcards by document
+  const flashcardDecks: FlashcardDeck[] = documents
+    .filter(doc => doc.flashcardsCount > 0)
+    .map(doc => {
+      const docFlashcards = flashcards.filter(f => f.documentId === doc._id)
+      const newCards = docFlashcards.filter(f => f.reviewCount === 0).length
+      const reviewCards = docFlashcards.filter(f => f.reviewCount > 0).length
+      
+      return {
+        documentId: doc._id,
+        title: doc.name,
+        description: `Flashcards generated from ${doc.name}`,
+        cardCount: doc.flashcardsCount,
+        newCards,
+        reviewCards,
+        source: doc.name,
+        lastStudied: docFlashcards.length > 0 
+          ? new Date(Math.max(...docFlashcards.map(f => new Date(f.lastReviewed || f.createdAt).getTime()))).toISOString()
+          : undefined
+      }
+    })
+
+  const totalCards = flashcards.length
+  const totalDecks = flashcardDecks.length
+  const accuracy = flashcards.length > 0 
+    ? Math.round((flashcards.filter(f => f.rating === "easy" || f.rating === "medium").length / flashcards.length) * 100)
+    : 0
   return (
     <div className="p-6 space-y-6">
       <div className="space-y-2">
@@ -98,7 +214,7 @@ export default function FlashcardsPage() {
                 <div className="flex items-center gap-2">
                   <BookOpen className="h-5 w-5 text-primary" />
                   <div>
-                    <p className="text-2xl font-bold">3</p>
+                    <p className="text-2xl font-bold">{totalDecks}</p>
                     <p className="text-xs text-muted-foreground">Total Decks</p>
                   </div>
                 </div>
@@ -109,7 +225,7 @@ export default function FlashcardsPage() {
                 <div className="flex items-center gap-2">
                   <Zap className="h-5 w-5 text-accent" />
                   <div>
-                    <p className="text-2xl font-bold">105</p>
+                    <p className="text-2xl font-bold">{totalCards}</p>
                     <p className="text-xs text-muted-foreground">Total Cards</p>
                   </div>
                 </div>
@@ -120,7 +236,7 @@ export default function FlashcardsPage() {
                 <div className="flex items-center gap-2">
                   <TrendingUp className="h-5 w-5 text-primary" />
                   <div>
-                    <p className="text-2xl font-bold">87%</p>
+                    <p className="text-2xl font-bold">{accuracy}%</p>
                     <p className="text-xs text-muted-foreground">Accuracy</p>
                   </div>
                 </div>
@@ -139,67 +255,204 @@ export default function FlashcardsPage() {
             </Card>
           </div>
 
-          {/* Deck List */}
-          <div className="grid gap-4">
-            {mockDecks.map((deck) => (
-              <Card key={deck.id} className="border-border/50 bg-card/50 hover:bg-card/80 transition-colors">
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h3 className="text-xl font-semibold">{deck.title}</h3>
-                        <Badge variant="outline" className="bg-transparent">
-                          {deck.cardCount} cards
-                        </Badge>
-                      </div>
-                      <p className="text-muted-foreground mb-4">{deck.description}</p>
-                      <div className="flex items-center gap-4 text-sm">
-                        <span className="flex items-center gap-1">
-                          <div className="w-2 h-2 bg-primary rounded-full" />
-                          {deck.newCards} new
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <div className="w-2 h-2 bg-accent rounded-full" />
-                          {deck.reviewCards} review
-                        </span>
-                        <span className="text-muted-foreground">
-                          Last studied: {new Date(deck.lastStudied).toLocaleDateString()}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button size="sm">Study Now</Button>
-                      <Button variant="outline" size="sm" className="bg-transparent">
-                        Edit
-                      </Button>
-                    </div>
-                  </div>
+          {/* Available Documents for Flashcard Generation */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold">Available Documents</h3>
+            {loading ? (
+              <Card className="border-border/50 bg-card/50">
+                <CardContent className="py-12 text-center">
+                  <RefreshCw className="h-8 w-8 text-muted-foreground mx-auto mb-4 animate-spin" />
+                  <p className="text-muted-foreground">Loading documents...</p>
                 </CardContent>
               </Card>
-            ))}
+            ) : (
+              <div className="grid gap-4">
+                {documents.filter(doc => doc.status === "completed").map((doc) => (
+                  <Card key={doc._id} className="border-border/50 bg-card/50 hover:bg-card/80 transition-colors">
+                    <CardContent className="p-6">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start gap-4 flex-1">
+                          <FileText className="h-10 w-10 text-primary flex-shrink-0 mt-1" />
+                          <div className="flex-1">
+                            <h3 className="text-xl font-semibold mb-2">{doc.name}</h3>
+                            <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
+                              <span>Status: {doc.status}</span>
+                              <span>•</span>
+                              <span>Flashcards: {doc.flashcardsCount}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          {doc.flashcardsCount > 0 ? (
+                            <>
+                              <Button 
+                                size="sm" 
+                                onClick={() => setSelectedDeck(doc._id)}
+                              >
+                                Study Now
+                              </Button>
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="bg-transparent"
+                                onClick={() => generateFlashcards(doc._id)}
+                              >
+                                Regenerate
+                              </Button>
+                            </>
+                          ) : (
+                            <Button 
+                              size="sm" 
+                              onClick={() => generateFlashcards(doc._id)}
+                              className="gap-2"
+                            >
+                              <Plus className="h-4 w-4" />
+                              Generate Flashcards
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Create New Deck */}
-          <Card className="border-border/50 bg-card/50 border-dashed">
-            <CardContent className="p-6 text-center">
-              <Plus className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Create New Deck</h3>
-              <p className="text-muted-foreground mb-4">Generate flashcards from your uploaded documents</p>
-              <Button className="gap-2">
-                <Plus className="h-4 w-4" />
-                Create Deck
-              </Button>
-            </CardContent>
-          </Card>
+          {/* Existing Flashcard Decks */}
+          {flashcardDecks.length > 0 && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold">Your Flashcard Decks</h3>
+              <div className="grid gap-4">
+                {flashcardDecks.map((deck) => (
+                  <Card key={deck.documentId} className="border-border/50 bg-card/50 hover:bg-card/80 transition-colors">
+                    <CardContent className="p-6">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <h3 className="text-xl font-semibold">{deck.title}</h3>
+                            <Badge variant="outline" className="bg-transparent">
+                              {deck.cardCount} cards
+                            </Badge>
+                          </div>
+                          <p className="text-muted-foreground mb-4">{deck.description}</p>
+                          <div className="flex items-center gap-4 text-sm">
+                            <span className="flex items-center gap-1">
+                              <div className="w-2 h-2 bg-primary rounded-full" />
+                              {deck.newCards} new
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <div className="w-2 h-2 bg-accent rounded-full" />
+                              {deck.reviewCards} review
+                            </span>
+                            {deck.lastStudied && (
+                              <span className="text-muted-foreground">
+                                Last studied: {new Date(deck.lastStudied).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button 
+                            size="sm" 
+                            onClick={() => setSelectedDeck(deck.documentId)}
+                          >
+                            Study Now
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="outline" size="sm" className="bg-transparent">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => generateFlashcards(deck.documentId)}>
+                                <RefreshCw className="mr-2 h-4 w-4" />
+                                Regenerate
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => setSelectedDeck(deck.documentId)}>
+                                <Edit className="mr-2 h-4 w-4" />
+                                Edit Cards
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="study" className="space-y-6">
-          <FlashcardDeck
-            title="Machine Learning Fundamentals"
-            description="Core concepts and algorithms in machine learning"
-            cards={mockFlashcards}
-            totalCards={45}
-          />
+          {selectedDeck ? (
+            <div className="space-y-4">
+              {/* Mode Toggle */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl font-semibold">
+                    {flashcardDecks.find(d => d.documentId === selectedDeck)?.title || "Study Session"}
+                  </h2>
+                  <Badge variant="outline">
+                    {flashcards.filter(f => f.documentId === selectedDeck).length} cards
+                  </Badge>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant={editMode ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setEditMode(!editMode)}
+                    className="gap-2"
+                  >
+                    <Edit className="h-4 w-4" />
+                    {editMode ? "Study Mode" : "Edit Mode"}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Study Mode */}
+              {!editMode ? (
+                <FlashcardDeck
+                  title={flashcardDecks.find(d => d.documentId === selectedDeck)?.title || "Study Session"}
+                  description={flashcardDecks.find(d => d.documentId === selectedDeck)?.description || ""}
+                  cards={flashcards.filter(f => f.documentId === selectedDeck)}
+                  totalCards={flashcards.filter(f => f.documentId === selectedDeck).length}
+                />
+              ) : (
+                /* Edit Mode */
+                <div className="space-y-4">
+                  <p className="text-muted-foreground">
+                    Edit your flashcards below. Click on any card to modify its content.
+                  </p>
+                  <div className="grid gap-4">
+                    {flashcards.filter(f => f.documentId === selectedDeck).map((flashcard) => (
+                      <FlashcardEdit
+                        key={flashcard._id}
+                        flashcard={flashcard}
+                        onSave={updateFlashcard}
+                        onDelete={deleteFlashcard}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Card className="border-border/50 bg-card/50">
+              <CardContent className="py-12 text-center">
+                <BookOpen className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-lg font-semibold mb-2">No Deck Selected</h3>
+                <p className="text-muted-foreground mb-4">
+                  Select a flashcard deck from the "My Decks" tab to start studying
+                </p>
+                <Button onClick={() => setSelectedDeck(null)}>
+                  View All Decks
+                </Button>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>

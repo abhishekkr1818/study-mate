@@ -16,6 +16,7 @@ export interface IDocument {
   questionsCount?: number;
   flashcardsCount?: number;
   errorMessage?: string;
+  extractedText?: string;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -40,6 +41,7 @@ const DocumentSchema = new Schema<IDocument>(
     questionsCount: { type: Number, default: 0 },
     flashcardsCount: { type: Number, default: 0 },
     errorMessage: { type: String },
+    extractedText: { type: String },
   },
   { timestamps: true }
 );

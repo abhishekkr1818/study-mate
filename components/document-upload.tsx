@@ -84,9 +84,17 @@ export function DocumentUpload({ onUploadSuccess }: { onUploadSuccess?: () => vo
       const response = await fetch("/api/documents", {
         method: "POST",
         body: formData,
+        headers: { Accept: "application/json" },
       })
 
-      const result = await response.json()
+      let result: any = null
+      const contentType = response.headers.get("content-type") || ""
+      if (contentType.includes("application/json")) {
+        try { result = await response.json() } catch { result = null }
+      } else {
+        const text = await response.text()
+        console.error("Non-JSON response during upload:", text)
+      }
 
       if (response.ok) {
         // Upload successful
@@ -107,7 +115,7 @@ export function DocumentUpload({ onUploadSuccess }: { onUploadSuccess?: () => vo
         setFiles((prev) =>
           prev.map((f) =>
             f.id === fileId
-              ? { ...f, status: "error", error: result.error || "Upload failed" }
+              ? { ...f, status: "error", error: (result?.error || response.statusText || "Upload failed") }
               : f
           )
         )

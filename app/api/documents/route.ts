@@ -7,6 +7,9 @@ import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
 
+// Ensure Node.js runtime (required for fs, Buffer, and pdf-parse)
+export const runtime = "nodejs";
+
 export async function POST(request: NextRequest) {
   try {
     // Check authentication
@@ -26,9 +29,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
-    // Validate file type
-    if (file.type !== "application/pdf") {
-      return NextResponse.json({ error: "Only PDF files are allowed" }, { status: 400 });
+    // Validate file type (some environments may not provide file.type reliably)
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    if (!isPdf) {
+      return NextResponse.json({ error: "Only PDF files are allowed (.pdf)" }, { status: 400 });
     }
 
     // Validate file size (10MB limit)
@@ -55,7 +59,7 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(bytes);
     await writeFile(filePath, buffer);
 
-    // Save document info to database
+    // Save document info to database (initially processing)
     const document = new Document({
       name: file.name.replace(/\.[^/.]+$/, ""), // Remove extension for display name
       originalName: file.name,
@@ -64,11 +68,59 @@ export async function POST(request: NextRequest) {
       fileSize: file.size,
       mimeType: file.type,
       userId: session.user.id,
-      status: "completed", // For now, mark as completed immediately
-      processedDate: new Date(),
+      status: "processing",
     });
 
     await document.save();
+
+    try {
+      // Dynamically import pdfjs-dist at runtime (works in Node)
+      const pdfjs = await import("pdfjs-dist");
+      // Disable worker in Node to avoid trying to load pdf.worker.mjs
+      try {
+        const anyPdf: any = pdfjs as any;
+        if (anyPdf.GlobalWorkerOptions) {
+          anyPdf.GlobalWorkerOptions.workerSrc = undefined;
+        }
+      } catch {}
+
+      const { getDocument } = pdfjs as unknown as {
+        getDocument: (src: any) => { promise: Promise<any> }
+      };
+
+      // Ensure we pass a Uint8Array to pdf.js
+      const uint8 = new Uint8Array(buffer);
+
+      const loadingTask = getDocument({
+        data: uint8,
+        useSystemFonts: true,
+        isEvalSupported: false,
+        disableWorker: true,
+      });
+      const pdf = await loadingTask.promise;
+
+      let extractedText = "";
+      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+        const page = await pdf.getPage(pageNum);
+        const content = await page.getTextContent();
+        const strings: string[] = [];
+        for (const item of content.items as any[]) {
+          if (item && typeof item.str === "string") strings.push(item.str);
+        }
+        extractedText += strings.join(" ") + "\n\n";
+      }
+
+      document.extractedText = extractedText.trim();
+      document.status = "completed";
+      document.processedDate = new Date();
+      await document.save();
+    } catch (parseErr: any) {
+      console.error("PDF parse error:", parseErr);
+      document.status = "error";
+      document.errorMessage = `Failed to extract text from PDF: ${parseErr?.message || "unknown error"}`;
+      await document.save();
+      return NextResponse.json({ success: false, error: document.errorMessage }, { status: 500 });
+    }
 
     return NextResponse.json({
       success: true,
@@ -81,6 +133,8 @@ export async function POST(request: NextRequest) {
         status: document.status,
         uploadDate: document.uploadDate,
         filePath: document.filePath,
+        extractedText: document.extractedText ?? null,
+        errorMessage: document.errorMessage ?? null,
       },
     });
 

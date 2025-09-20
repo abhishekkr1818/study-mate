@@ -33,13 +33,21 @@ export function DocumentList() {
     
     try {
       setLoading(true)
-      const response = await fetch("/api/documents")
-      const data = await response.json()
-      
-      if (response.ok) {
-        setDocuments(data.documents || [])
+      const response = await fetch("/api/documents", { headers: { Accept: "application/json" } })
+      let data: any = null
+      const contentType = response.headers.get("content-type") || ""
+      if (contentType.includes("application/json")) {
+        try { data = await response.json() } catch { data = null }
       } else {
-        console.error("Failed to fetch documents:", data.error)
+        // Fallback to text to avoid JSON parse error when server returns HTML
+        const text = await response.text()
+        console.error("Non-JSON response while fetching documents:", text)
+      }
+
+      if (response.ok) {
+        setDocuments((data?.documents) || [])
+      } else {
+        console.error("Failed to fetch documents:", data?.error || response.statusText)
       }
     } catch (error) {
       console.error("Error fetching documents:", error)
@@ -52,13 +60,18 @@ export function DocumentList() {
     try {
       const response = await fetch(`/api/documents?id=${documentId}`, {
         method: "DELETE",
+        headers: { Accept: "application/json" },
       })
       
       if (response.ok) {
         setDocuments(prev => prev.filter(doc => doc._id !== documentId))
       } else {
-        const data = await response.json()
-        alert(`Failed to delete document: ${data.error}`)
+        let data: any = null
+        const contentType = response.headers.get("content-type") || ""
+        if (contentType.includes("application/json")) {
+          try { data = await response.json() } catch { /* ignore */ }
+        }
+        alert(`Failed to delete document: ${data?.error || response.statusText}`)
       }
     } catch (error) {
       console.error("Error deleting document:", error)

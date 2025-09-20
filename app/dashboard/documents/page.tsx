@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { DocumentUpload } from "@/components/document-upload"
 import { DocumentList } from "@/components/document-list"
+import { DocumentExtractedText } from "@/components/document-extracted-text"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Upload, FileText } from "lucide-react"
 
@@ -23,7 +24,7 @@ export default function DocumentsPage() {
       </div>
 
       <Tabs defaultValue="upload" className="space-y-6">
-        <TabsList className="grid w-full max-w-md grid-cols-2">
+        <TabsList className="grid w-full max-w-xl grid-cols-3">
           <TabsTrigger value="upload" className="flex items-center gap-2">
             <Upload className="h-4 w-4" />
             Upload
@@ -31,6 +32,10 @@ export default function DocumentsPage() {
           <TabsTrigger value="library" className="flex items-center gap-2">
             <FileText className="h-4 w-4" />
             Library
+          </TabsTrigger>
+          <TabsTrigger value="extracted" className="flex items-center gap-2">
+            <FileText className="h-4 w-4" />
+            Extracted Text
           </TabsTrigger>
         </TabsList>
 
@@ -40,6 +45,10 @@ export default function DocumentsPage() {
 
         <TabsContent value="library" className="space-y-6">
           <DocumentList key={refreshTrigger} />
+        </TabsContent>
+
+        <TabsContent value="extracted" className="space-y-6">
+          <DocumentExtractedText key={`extracted-${refreshTrigger}`} />
         </TabsContent>
       </Tabs>
     </div>
