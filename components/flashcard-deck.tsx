@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { Flashcard } from "@/components/flashcard"
-import { Play, Pause, RotateCcw, Download, Settings, Trophy, Target, Clock, TrendingUp, BarChart3, Zap } from "lucide-react"
+import { Play, Pause, RotateCcw, Download, Settings, Trophy, Target, Clock, TrendingUp, BarChart3, Zap, ListChecks } from "lucide-react"
 
 interface FlashcardData {
   _id: string
@@ -39,6 +39,11 @@ export function FlashcardDeck({ title, description, cards, totalCards }: Flashca
   })
   const [sessionComplete, setSessionComplete] = useState(false)
   const [studyMode, setStudyMode] = useState<'all' | 'new' | 'review'>('all')
+  const [gameMode, setGameMode] = useState<'flashcards' | 'quiz'>('flashcards')
+  const [questionTimer, setQuestionTimer] = useState<number>(30) // seconds per question for quiz
+  const [remainingTime, setRemainingTime] = useState<number>(30)
+  const [selectedOption, setSelectedOption] = useState<string | null>(null)
+  const [feedbackShown, setFeedbackShown] = useState(false)
 
   // Filter cards based on study mode
   const filteredCards = cards.filter(card => {
@@ -63,6 +68,23 @@ export function FlashcardDeck({ title, description, cards, totalCards }: Flashca
     }
     return () => clearInterval(interval)
   }, [isStudying, studyStats.startTime])
+
+  // Per-question countdown for quiz mode
+  useEffect(() => {
+    if (!isStudying || gameMode !== 'quiz') return
+    setRemainingTime(questionTimer)
+  }, [isStudying, gameMode, questionTimer, currentCardIndex])
+
+  useEffect(() => {
+    if (!isStudying || gameMode !== 'quiz') return
+    if (remainingTime <= 0) {
+      // auto-mark incorrect if time runs out
+      handleSubmitAnswer(null)
+      return
+    }
+    const t = setTimeout(() => setRemainingTime((t) => t - 1), 1000)
+    return () => clearTimeout(t)
+  }, [isStudying, gameMode, remainingTime])
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
@@ -107,9 +129,28 @@ export function FlashcardDeck({ title, description, cards, totalCards }: Flashca
   }
 
   const startStudySession = () => {
+    setGameMode('flashcards')
     setIsStudying(true)
     setCurrentCardIndex(0)
     setSessionComplete(false)
+    setSelectedOption(null)
+    setFeedbackShown(false)
+    setStudyStats({ 
+      correct: 0, 
+      incorrect: 0, 
+      total: 0, 
+      startTime: new Date(),
+      sessionTime: 0
+    })
+  }
+
+  const startQuizSession = () => {
+    setGameMode('quiz')
+    setIsStudying(true)
+    setCurrentCardIndex(0)
+    setSessionComplete(false)
+    setSelectedOption(null)
+    setFeedbackShown(false)
     setStudyStats({ 
       correct: 0, 
       incorrect: 0, 
@@ -122,6 +163,8 @@ export function FlashcardDeck({ title, description, cards, totalCards }: Flashca
   const resetSession = () => {
     setCurrentCardIndex(0)
     setSessionComplete(false)
+    setSelectedOption(null)
+    setFeedbackShown(false)
     setStudyStats({ 
       correct: 0, 
       incorrect: 0, 
@@ -137,6 +180,47 @@ export function FlashcardDeck({ title, description, cards, totalCards }: Flashca
   }
 
   const accuracy = studyStats.total > 0 ? Math.round((studyStats.correct / studyStats.total) * 100) : 0
+
+  // ----- QUIZ HELPERS -----
+  const getOptionsForCard = (cardIndex: number) => {
+    const correct = filteredCards[cardIndex]
+    if (!correct) return [] as string[]
+    // collect other answers as distractors
+    const distractors = filteredCards
+      .filter((_, idx) => idx !== cardIndex)
+      .map(c => c.answer)
+    // pick up to 3 unique distractors
+    const shuffled = [...new Set(distractors)].sort(() => Math.random() - 0.5)
+    const picked = shuffled.slice(0, 3)
+    const options = [...picked, correct.answer]
+    return options.sort(() => Math.random() - 0.5)
+  }
+
+  const handleSubmitAnswer = (answer: string | null) => {
+    if (!currentCard) return
+    const isCorrect = answer !== null && answer === currentCard.answer
+    setSelectedOption(answer)
+    setFeedbackShown(true)
+
+    setStudyStats(prev => ({
+      ...prev,
+      correct: isCorrect ? prev.correct + 1 : prev.correct,
+      incorrect: !isCorrect ? prev.incorrect + 1 : prev.incorrect,
+      total: prev.total + 1,
+    }))
+
+    // advance after a short delay
+    setTimeout(() => {
+      setSelectedOption(null)
+      setFeedbackShown(false)
+      if (currentCardIndex < filteredCards.length - 1) {
+        setCurrentCardIndex(currentCardIndex + 1)
+      } else {
+        setSessionComplete(true)
+        setIsStudying(false)
+      }
+    }, 700)
+  }
 
   if (!isStudying && !sessionComplete) {
     return (
@@ -240,6 +324,16 @@ export function FlashcardDeck({ title, description, cards, totalCards }: Flashca
                   </Badge>
                 )}
               </Button>
+              <Button 
+                onClick={startQuizSession} 
+                variant="outline"
+                className="gap-2 h-12 text-lg font-medium bg-transparent"
+                disabled={filteredCards.length < 2}
+                title={filteredCards.length < 2 ? 'Need at least 2 cards for quiz options' : 'Start Quiz'}
+              >
+                <ListChecks className="h-5 w-5" />
+                Start Quiz
+              </Button>
               <Button variant="outline" className="gap-2 bg-transparent">
                 <Settings className="h-4 w-4" />
                 Settings
@@ -325,6 +419,10 @@ export function FlashcardDeck({ title, description, cards, totalCards }: Flashca
                 <Play className="h-4 w-4" />
                 Study Again
               </Button>
+              <Button onClick={startQuizSession} variant="outline" className="gap-2">
+                <ListChecks className="h-4 w-4" />
+                Take Quiz Again
+              </Button>
               <Button variant="outline" onClick={() => setSessionComplete(false)} className="gap-2">
                 <BarChart3 className="h-4 w-4" />
                 View Deck
@@ -355,7 +453,13 @@ export function FlashcardDeck({ title, description, cards, totalCards }: Flashca
                 <Progress value={progress} className="h-3" />
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-4">
+              {gameMode === 'quiz' && (
+                <div className="text-right">
+                  <p className="text-sm font-medium">{remainingTime}s</p>
+                  <p className="text-xs text-muted-foreground">Time left</p>
+                </div>
+              )}
               <div className="text-right">
                 <p className="text-sm font-medium">{formatTime(studyStats.sessionTime)}</p>
                 <p className="text-xs text-muted-foreground">Time</p>
@@ -388,15 +492,76 @@ export function FlashcardDeck({ title, description, cards, totalCards }: Flashca
         </CardContent>
       </Card>
 
-      {/* Current Flashcard */}
+      {/* Current Content */}
       {currentCard && (
-        <Flashcard
-          question={currentCard.question}
-          answer={currentCard.answer}
-          difficulty={currentCard.difficulty}
-          source={currentCard.source}
-          onRate={handleCardRating}
-        />
+        gameMode === 'flashcards' ? (
+          <Flashcard
+            question={currentCard.question}
+            answer={currentCard.answer}
+            difficulty={currentCard.difficulty}
+            source={currentCard.source}
+            onRate={handleCardRating}
+          />
+        ) : (
+          <div className="w-full max-w-3xl mx-auto">
+            <Card className="border-border/50 bg-gradient-to-br from-card/50 to-card/80 backdrop-blur-sm shadow-xl">
+              <CardContent className="p-8 space-y-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="bg-transparent">Quiz</Badge>
+                    <Badge variant="secondary">Question {currentCardIndex + 1}</Badge>
+                  </div>
+                  <div className="text-sm text-muted-foreground">{filteredCards.length} total</div>
+                </div>
+
+                <div className="space-y-3">
+                  <h3 className="text-lg font-semibold text-muted-foreground">Question</h3>
+                  <div className="bg-muted/30 rounded-lg p-6">
+                    <p className="text-xl leading-relaxed text-balance font-medium">{currentCard.question}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="text-sm font-medium text-muted-foreground">Choose the correct answer</h4>
+                  <div className="grid gap-3">
+                    {getOptionsForCard(currentCardIndex).map((opt) => {
+                      const isCorrect = opt === currentCard.answer
+                      const isSelected = selectedOption === opt
+                      const showFeedback = feedbackShown && (isSelected || isCorrect)
+                      return (
+                        <Button
+                          key={opt}
+                          variant="outline"
+                          className={
+                            `justify-start h-auto py-4 text-left bg-transparent ${
+                              showFeedback
+                                ? isCorrect
+                                  ? 'border-green-500 ring-2 ring-green-300'
+                                  : isSelected
+                                    ? 'border-red-500 ring-2 ring-red-300'
+                                    : ''
+                                : ''
+                            }`
+                          }
+                          disabled={feedbackShown}
+                          onClick={() => handleSubmitAnswer(opt)}
+                        >
+                          {opt}
+                        </Button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {feedbackShown && (
+                  <div className="text-sm text-muted-foreground">
+                    Correct answer: <span className="font-medium">{currentCard.answer}</span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )
       )}
     </div>
   )

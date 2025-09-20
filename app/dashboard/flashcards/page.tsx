@@ -36,6 +36,7 @@ export default function FlashcardsPage() {
   const [loading, setLoading] = useState(true)
   const [selectedDeck, setSelectedDeck] = useState<string | null>(null)
   const [editMode, setEditMode] = useState(false)
+  const [tab, setTab] = useState<string>("decks")
   const { data: session } = useSession()
 
   const fetchDocuments = async () => {
@@ -224,7 +225,7 @@ export default function FlashcardsPage() {
         </p>
       </div>
 
-      <Tabs defaultValue="decks" className="space-y-6">
+      <Tabs value={tab} onValueChange={setTab} className="space-y-6">
         <TabsList className="grid w-full max-w-md grid-cols-2">
           <TabsTrigger value="decks" className="flex items-center gap-2">
             <BookOpen className="h-4 w-4" />
@@ -317,7 +318,7 @@ export default function FlashcardsPage() {
                             <>
                               <Button 
                                 size="sm" 
-                                onClick={() => setSelectedDeck(doc._id)}
+                                onClick={() => { setSelectedDeck(doc._id); setTab('study') }}
                               >
                                 Study Now
                               </Button>
@@ -385,7 +386,7 @@ export default function FlashcardsPage() {
                         <div className="flex gap-2">
                           <Button 
                             size="sm" 
-                            onClick={() => setSelectedDeck(deck.documentId)}
+                            onClick={() => { setSelectedDeck(deck.documentId); setTab('study') }}
                           >
                             Study Now
                           </Button>
